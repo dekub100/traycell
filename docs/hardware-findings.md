@@ -155,3 +155,9 @@ otherwise return a *disconnected* reading, which the monitor turns into `Off` im
 - Turning the controller off makes the BLE node disconnected or removes it, which the
   8 s controller poll also catches. A confirmed disconnect maps to `BatteryState.Off`
   immediately and clears the cached level, so the old 100% cannot reappear as stale.
+- The mouse has no equivalent event: the dongle stays enumerated and simply answers
+  `0x04` when the mouse is asleep **or** switched off. With no way to tell those apart,
+  a failed poll is reported as disconnected (after the source's own retries) and the
+  monitor goes straight to `Off`, rather than showing a stale percentage for minutes.
+  The cost is that an idle mouse shows as not responding until it is moved and the next
+  8 s poll succeeds.

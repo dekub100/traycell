@@ -68,9 +68,13 @@ public sealed class RazerBatterySource : IBatterySource, IDisposable
             candidate.Dispose();
         }
 
-        return BatteryReading.Unavailable(failures.Count == 0
+        // No dongle, or the dongle could not reach the mouse. The receiver has no "link
+        // lost" event, and a sleeping mouse answers exactly like a switched-off one
+        // (status 0x04), so the honest state is "not responding" rather than a stale
+        // percentage. The next successful poll restores the number.
+        return BatteryReading.Disconnected(failures.Count == 0
             ? "no Razer dongle or mouse found"
-            : string.Join("; ", failures));
+            : $"mouse not responding (asleep or switched off): {string.Join("; ", failures)}");
     }
 
     private static BatteryReading Query(HidCollection collection)

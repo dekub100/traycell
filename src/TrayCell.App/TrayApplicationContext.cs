@@ -12,11 +12,12 @@ namespace TrayCell.App;
 /// </summary>
 internal sealed class TrayApplicationContext : ApplicationContext
 {
-    /// <summary>The mouse read wakes the dongle and costs ~60 ms plus retries.</summary>
-    private static readonly TimeSpan MousePollInterval = TimeSpan.FromSeconds(45);
-
-    /// <summary>The controller read is a cheap PnP property lookup.</summary>
-    private static readonly TimeSpan ControllerPollInterval = TimeSpan.FromSeconds(8);
+    /// <summary>
+    /// Both devices are polled on the same short interval: the controller read is a cheap
+    /// PnP property lookup, and the mouse needs frequent polls because its dongle has no
+    /// "link lost" event - a failed read is the only disconnect signal we get.
+    /// </summary>
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(8);
 
     private readonly BatteryMonitor _monitor;
     private readonly RazerBatterySource _mouseSource = new();
@@ -25,8 +26,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly AppSettings _settings;
     private readonly NotifyIcon _icon;
     private readonly BatteryFlyout _flyout;
-    private readonly System.Windows.Forms.Timer _mouseTimer;
-    private readonly System.Windows.Forms.Timer _controllerTimer;
+    private readonly System.Windows.Forms.Timer _pollTimer;
     private readonly System.Windows.Forms.Timer _changeTimer;
     private readonly SemaphoreSlim _pollGate = new(1, 1);
     private IReadOnlyList<DeviceSnapshot> _snapshots = [];
@@ -59,8 +59,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _notifier = new DeviceChangeNotifier();
         _notifier.Changed += () => Interlocked.Exchange(ref _deviceChangePending, 1);
 
-        _mouseTimer = CreateTimer(MousePollInterval, () => RefreshAsync(_mouseSource.Name));
-        _controllerTimer = CreateTimer(ControllerPollInterval, () => RefreshAsync(_controllerSource.Name));
+        _pollTimer = CreateTimer(PollInterval, () => RefreshAsync());
         _changeTimer = CreateTimer(TimeSpan.FromSeconds(1), () =>
         {
             if (Interlocked.Exchange(ref _deviceChangePending, 0) == 1)
@@ -264,11 +263,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     protected override void ExitThreadCore()
     {
-        _mouseTimer.Stop();
-        _controllerTimer.Stop();
+        _pollTimer.Stop();
         _changeTimer.Stop();
-        _mouseTimer.Dispose();
-        _controllerTimer.Dispose();
+        _pollTimer.Dispose();
         _changeTimer.Dispose();
         _notifier.Dispose();
         _icon.Visible = false;
