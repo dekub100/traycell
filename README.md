@@ -8,7 +8,7 @@ The goal is a glanceable, always-on percentage per device, with no Razer Synapse
 
 Research complete, implementation not started. Two documents:
 
-- [`battery-tray-handoff.md`](battery-tray-handoff.md) — the original research, including dead ends and reasoning.
+- [`docs/battery-tray-handoff.md`](docs/battery-tray-handoff.md) — the original research, including dead ends and reasoning.
 - [`docs/hardware-findings.md`](docs/hardware-findings.md) — what has since been **verified on the target machine**: exact device IDs, protocol bytes, CRC rule.
 
 | Device | Feasible | Transport | State |
