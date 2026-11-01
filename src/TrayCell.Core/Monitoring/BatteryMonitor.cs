@@ -52,8 +52,9 @@ public sealed record DeviceSnapshot(
 }
 
 /// <summary>
-/// Polls every source and applies the Ok / Stale / Off rule: a number is never
-/// shown as current if the device stopped answering.
+/// Polls every source and applies the Ok / Stale / Wired / Off rule: a number is never
+/// shown as current if the device stopped answering, and a device that is confirmed
+/// gone drops its cached value immediately.
 /// </summary>
 public sealed class BatteryMonitor
 {
@@ -61,6 +62,7 @@ public sealed class BatteryMonitor
     private readonly Dictionary<string, (int Level, bool? Charging)> _lastValue = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DateTimeOffset> _lastSuccess = new(StringComparer.Ordinal);
     private readonly TimeSpan _staleAfter;
+    private readonly object _gate = new();
 
     public BatteryMonitor(IEnumerable<IBatterySource> sources, TimeSpan? staleAfter = null)
     {
@@ -68,11 +70,19 @@ public sealed class BatteryMonitor
         _staleAfter = staleAfter ?? TimeSpan.FromMinutes(3);
     }
 
-    public IReadOnlyList<DeviceSnapshot> Poll()
+    /// <summary>
+    /// Polls every source, or only <paramref name="sourceName"/> when given, so a cheap
+    /// source can be refreshed more often than an expensive one.
+    /// </summary>
+    public IReadOnlyList<DeviceSnapshot> Poll(string? sourceName = null)
     {
-        var snapshots = new List<DeviceSnapshot>(_sources.Length);
+        var sources = sourceName is null
+            ? _sources
+            : _sources.Where(source => string.Equals(source.Name, sourceName, StringComparison.OrdinalIgnoreCase)).ToArray();
 
-        foreach (var source in _sources)
+        var snapshots = new List<DeviceSnapshot>(sources.Length);
+
+        foreach (var source in sources)
         {
             BatteryReading reading;
             try
@@ -84,35 +94,48 @@ public sealed class BatteryMonitor
                 reading = BatteryReading.Unavailable(exception.Message);
             }
 
+            snapshots.Add(ToSnapshot(source, reading));
+        }
+
+        return snapshots;
+    }
+
+    private DeviceSnapshot ToSnapshot(IBatterySource source, BatteryReading reading)
+    {
+        lock (_gate)
+        {
             if (reading is { Success: true, Level: { } level })
             {
                 _lastValue[source.Name] = (level, reading.IsCharging);
                 _lastSuccess[source.Name] = reading.ObservedAt;
-                snapshots.Add(new DeviceSnapshot(source.Name, level, reading.IsCharging, BatteryState.Ok, reading.ObservedAt, reading.Detail));
-                continue;
+                return new DeviceSnapshot(source.Name, level, reading.IsCharging, BatteryState.Ok, reading.ObservedAt, reading.Detail);
             }
 
-            // Connected but unmetered: report that instead of a stale number or "off".
-            if (reading is { Present: true, Level: null })
+            // Connected but unmetered: say so instead of showing a stale number or "off".
+            if (reading is { Presence: BatteryPresence.Present, Level: null })
             {
-                snapshots.Add(new DeviceSnapshot(source.Name, null, null, BatteryState.Wired, reading.ObservedAt, reading.Detail));
-                continue;
+                return new DeviceSnapshot(source.Name, null, null, BatteryState.Wired, reading.ObservedAt, reading.Detail);
+            }
+
+            // Confirmed gone: forget the cached value so it cannot resurface as stale.
+            if (reading.Presence == BatteryPresence.Absent)
+            {
+                _lastValue.Remove(source.Name);
+                _lastSuccess.Remove(source.Name);
+                return new DeviceSnapshot(source.Name, null, null, BatteryState.Off, null, reading.Detail);
             }
 
             if (_lastValue.TryGetValue(source.Name, out var cached)
                 && _lastSuccess.TryGetValue(source.Name, out var seen)
                 && DateTimeOffset.Now - seen <= _staleAfter)
             {
-                snapshots.Add(new DeviceSnapshot(source.Name, cached.Level, cached.Charging, BatteryState.Stale, seen, reading.Detail));
-                continue;
+                return new DeviceSnapshot(source.Name, cached.Level, cached.Charging, BatteryState.Stale, seen, reading.Detail);
             }
 
-            snapshots.Add(new DeviceSnapshot(
+            return new DeviceSnapshot(
                 source.Name, null, null, BatteryState.Off,
                 _lastSuccess.TryGetValue(source.Name, out var lastSeen) ? lastSeen : null,
-                reading.Detail));
+                reading.Detail);
         }
-
-        return snapshots;
     }
 }

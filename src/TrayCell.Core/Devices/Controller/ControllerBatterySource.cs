@@ -65,7 +65,7 @@ public sealed class ControllerBatterySource : IBatterySource
                 return BatteryReading.Ok((int)level, null, instanceId);
             }
 
-            return BatteryReading.Unavailable("connected over Bluetooth but Windows reports no battery level");
+            return BatteryReading.Connected("connected over Bluetooth but Windows reports no battery level");
         }
 
         if (IsConnectedOverUsb())
@@ -75,7 +75,7 @@ public sealed class ControllerBatterySource : IBatterySource
                 : "connected over USB/XInput, which exposes no percentage");
         }
 
-        return BatteryReading.Unavailable(sawDisconnectedNode
+        return BatteryReading.Disconnected(sawDisconnectedNode
             ? "not connected (the paired Bluetooth node is offline)"
             : "not connected over Bluetooth");
     }

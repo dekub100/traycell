@@ -139,4 +139,19 @@ Verified on the target machine with the controller plugged in by USB cable and c
 Rule used by `ControllerBatterySource`: read the BLE property only when
 `DN_DEVICE_DISCONNECTED` is clear; otherwise, if an XInput controller is live and an 8BitDo
 USB device is present, return a *connected* reading with no level (`BatteryState.Wired`);
-otherwise report unavailable.
+otherwise return a *disconnected* reading, which the monitor turns into `Off` immediately.
+
+### Disconnect detection
+
+- `CM_Register_Notification` with `CM_NOTIFY_FILTER_TYPE_DEVICEINSTANCE` and
+  `CM_NOTIFY_FILTER_FLAG_ALL_DEVICE_INSTANCES` works from a normal user process and fires
+  on plug, unplug, Bluetooth reconnect and power-off. Verified: 39 callbacks across one
+  plug → unplug → BT reconnect → power-off sequence.
+- The native `CM_NOTIFY_FILTER` is 416 bytes: the flags live at the **top level**, and the
+  DEVICEINSTANCE union is `WCHAR InstanceId[MAX_DEVICE_ID_LEN]` (200 chars / 400 bytes).
+  Getting this wrong returns `CR_INVALID_DATA` (31).
+- Callbacks arrive on a system thread, so the app only sets a flag there and lets a 1 s UI
+  timer debounce and refresh.
+- Turning the controller off makes the BLE node disconnected or removes it, which the
+  8 s controller poll also catches. A confirmed disconnect maps to `BatteryState.Off`
+  immediately and clears the cached level, so the old 100% cannot reappear as stale.

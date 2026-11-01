@@ -3,6 +3,7 @@ using TrayCell.Devices.Controller;
 using TrayCell.Devices.Razer;
 using TrayCell.Diagnostics;
 using TrayCell.Hid;
+using TrayCell.Interop;
 
 var command = args.Length > 0 ? args[0].ToLowerInvariant() : "all";
 var includeAllPids = args.Contains("--all", StringComparer.OrdinalIgnoreCase);
@@ -43,6 +44,9 @@ try
             Console.WriteLine("== XInput controllers ==");
             DumpXInput();
             break;
+        case "notify":
+            WatchDeviceChanges(watchSeconds);
+            break;
         case "all":
             ProbeController();
             Console.WriteLine();
@@ -72,6 +76,7 @@ static void PrintUsage()
           razer        Enumerate Razer HID collections and try the battery query on each
                        (--all also tries PIDs other than the Viper V3 Pro / SE)
           hid          Dump every present HID collection with its usage page/usage
+          notify       Register for PnP device changes and print events for a while
           all          Both device probes (default)
         """);
 }
@@ -106,7 +111,8 @@ static void ProbeController()
     Console.WriteLine(reading switch
     {
         { Success: true } => $"  RESULT: {source.Name} = {reading.Level}%",
-        { Present: true } => $"  RESULT: {source.Name} connected, no percentage - {reading.Detail}",
+        { Presence: BatteryPresence.Present } => $"  RESULT: {source.Name} connected, no percentage - {reading.Detail}",
+        { Presence: BatteryPresence.Absent } => $"  RESULT: {source.Name} not connected - {reading.Detail}",
         _ => $"  RESULT: unavailable - {reading.Detail}",
     });
 }
@@ -126,6 +132,21 @@ static void DumpXInput()
                           $"type={XInputDevice.DescribeType(controller.Type)} " +
                           $"level={XInputDevice.DescribeLevel(controller.Level)}");
     }
+}
+
+static void WatchDeviceChanges(int seconds)
+{
+    using var notifier = new DeviceChangeNotifier();
+    Console.WriteLine(notifier.IsActive
+        ? "registered for device-instance notifications"
+        : $"registration FAILED (CONFIGRET {notifier.LastError}) - polling only");
+
+    var changes = 0;
+    notifier.Changed += () =>
+        Console.WriteLine($"{DateTime.Now:HH:mm:ss} device change #{Interlocked.Increment(ref changes)}");
+
+    Console.WriteLine($"watching for {seconds}s - plug/unplug a device");
+    Thread.Sleep(TimeSpan.FromSeconds(seconds));
 }
 
 static void ProbeRazer(bool includeAllPids, int settleMs)

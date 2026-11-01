@@ -1,31 +1,41 @@
 using TrayCell.Devices;
 using TrayCell.Devices.Controller;
 using TrayCell.Devices.Razer;
+using TrayCell.Interop;
 using TrayCell.Monitoring;
 
 namespace TrayCell.App;
 
 /// <summary>
-/// Owns the single tray icon, the flyout panel and the poll timer.
+/// Owns the single tray icon, the flyout panel and the poll timers.
 /// Polling happens off the UI thread; the UI only touches ready snapshots.
 /// </summary>
 internal sealed class TrayApplicationContext : ApplicationContext
 {
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(45);
+    /// <summary>The mouse read wakes the dongle and costs ~60 ms plus retries.</summary>
+    private static readonly TimeSpan MousePollInterval = TimeSpan.FromSeconds(45);
+
+    /// <summary>The controller read is a cheap PnP property lookup.</summary>
+    private static readonly TimeSpan ControllerPollInterval = TimeSpan.FromSeconds(8);
 
     private readonly BatteryMonitor _monitor;
     private readonly RazerBatterySource _mouseSource = new();
+    private readonly ControllerBatterySource _controllerSource = new();
+    private readonly DeviceChangeNotifier _notifier;
     private readonly AppSettings _settings;
     private readonly NotifyIcon _icon;
     private readonly BatteryFlyout _flyout;
-    private readonly System.Windows.Forms.Timer _timer;
+    private readonly System.Windows.Forms.Timer _mouseTimer;
+    private readonly System.Windows.Forms.Timer _controllerTimer;
+    private readonly System.Windows.Forms.Timer _changeTimer;
+    private readonly SemaphoreSlim _pollGate = new(1, 1);
     private IReadOnlyList<DeviceSnapshot> _snapshots = [];
-    private bool _polling;
+    private int _deviceChangePending;
 
     public TrayApplicationContext()
     {
         _settings = AppSettings.Load();
-        _monitor = new BatteryMonitor([_mouseSource, new ControllerBatterySource()]);
+        _monitor = new BatteryMonitor([_mouseSource, _controllerSource]);
         _flyout = new BatteryFlyout(() => _ = RefreshAsync(), ExitThread, PinDevice);
 
         _icon = new NotifyIcon
@@ -44,11 +54,32 @@ internal sealed class TrayApplicationContext : ApplicationContext
             }
         };
 
-        _timer = new System.Windows.Forms.Timer { Interval = (int)PollInterval.TotalMilliseconds };
-        _timer.Tick += async (_, _) => await RefreshAsync();
-        _timer.Start();
+        // Device arrivals/removals refresh immediately; the flag is set on a system
+        // thread and consumed by the UI timer, which also debounces bursts.
+        _notifier = new DeviceChangeNotifier();
+        _notifier.Changed += () => Interlocked.Exchange(ref _deviceChangePending, 1);
+
+        _mouseTimer = CreateTimer(MousePollInterval, () => RefreshAsync(_mouseSource.Name));
+        _controllerTimer = CreateTimer(ControllerPollInterval, () => RefreshAsync(_controllerSource.Name));
+        _changeTimer = CreateTimer(TimeSpan.FromSeconds(1), () =>
+        {
+            if (Interlocked.Exchange(ref _deviceChangePending, 0) == 1)
+            {
+                return RefreshAsync();
+            }
+
+            return Task.CompletedTask;
+        });
 
         _ = RefreshAsync();
+    }
+
+    private System.Windows.Forms.Timer CreateTimer(TimeSpan interval, Func<Task> tick)
+    {
+        var timer = new System.Windows.Forms.Timer { Interval = (int)interval.TotalMilliseconds };
+        timer.Tick += async (_, _) => await tick();
+        timer.Start();
+        return timer;
     }
 
     private ContextMenuStrip CreateMenu()
@@ -58,31 +89,44 @@ internal sealed class TrayApplicationContext : ApplicationContext
         return menu;
     }
 
-    private async Task RefreshAsync()
+    private async Task RefreshAsync(string? sourceName = null)
     {
-        if (_polling)
-        {
-            return;
-        }
-
-        _polling = true;
+        await _pollGate.WaitAsync();
         try
         {
-            var snapshots = await Task.Run(_monitor.Poll);
-            Apply(snapshots);
+            var snapshots = await Task.Run(() => _monitor.Poll(sourceName));
+            Merge(snapshots);
         }
         finally
         {
-            _polling = false;
+            _pollGate.Release();
         }
     }
 
-    private void Apply(IReadOnlyList<DeviceSnapshot> snapshots)
+    /// <summary>Replaces only the snapshots that were just re-read, keeping the others.</summary>
+    private void Merge(IReadOnlyList<DeviceSnapshot> snapshots)
     {
-        _snapshots = snapshots;
+        var merged = _snapshots.ToList();
+
+        foreach (var snapshot in snapshots)
+        {
+            var index = merged.FindIndex(existing =>
+                string.Equals(existing.Name, snapshot.Name, StringComparison.OrdinalIgnoreCase));
+
+            if (index >= 0)
+            {
+                merged[index] = snapshot;
+            }
+            else
+            {
+                merged.Add(snapshot);
+            }
+        }
+
+        _snapshots = merged;
 
         ShowIcon();
-        _flyout.Update(snapshots, _settings.PinnedDevice);
+        _flyout.Update(_snapshots, _settings.PinnedDevice);
     }
 
     /// <summary>Repaints the tray icon and tooltip from the current snapshots and pin.</summary>
@@ -220,7 +264,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     protected override void ExitThreadCore()
     {
-        _timer.Stop();
+        _mouseTimer.Stop();
+        _controllerTimer.Stop();
+        _changeTimer.Stop();
+        _mouseTimer.Dispose();
+        _controllerTimer.Dispose();
+        _changeTimer.Dispose();
+        _notifier.Dispose();
         _icon.Visible = false;
         _icon.Dispose();
         _flyout.Dispose();

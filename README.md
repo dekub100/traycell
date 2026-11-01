@@ -18,7 +18,7 @@ Research complete and implemented. Two documents:
 
 ## Design in one paragraph
 
-One process, two independent pollers on a 30–60 s timer, and a per-device state model of `Level`, `Charging`, `LastUpdated`, `State = Ok | Stale | Wired | Off`. A number is never shown without its staleness marked, because both devices can silently stop reporting (mouse asleep, controller switched to the 2.4 GHz dongle). `Wired` means the device is connected over a transport with no percentage (XInput) — the app says so instead of showing a cached number. The UI is a single tray icon; left-clicking it opens a small flyout with a row and level bar per device, plus Refresh and Exit. The icon follows the lowest live level by default, or a device you pin by clicking its row (or via the "Tray icon shows" menu); the pin is saved to `%LOCALAPPDATA%\TrayCell\settings.json`.
+One process, two independent pollers (controller every 8 s, mouse every 45 s), PnP device-instance notifications for immediate refreshes, and a per-device state model of `Level`, `Charging`, `LastUpdated`, `State = Ok | Stale | Wired | Off`. A number is never shown without its staleness marked, because both devices can silently stop reporting (mouse asleep, controller switched to the 2.4 GHz dongle). A device that is **confirmed gone** drops its cached value at once rather than lingering as stale. `Wired` means the device is connected over a transport with no percentage (XInput) — the app says so instead of showing a cached number. The UI is a single tray icon; left-clicking it opens a small flyout with a row and level bar per device, plus Refresh and Exit. The icon follows the lowest live level by default, or a device you pin by clicking its row (or via the "Tray icon shows" menu); the pin is saved to `%LOCALAPPDATA%\TrayCell\settings.json`.
 
 Planned stack: C# / .NET 10 on Windows — `NotifyIcon` for the tray, cfgmgr32 (`CM_Get_DevNode_PropertyW`) for the controller, and raw `hid.dll` / `setupapi` feature reports for the Razer mouse. No NuGet packages.
 
@@ -49,6 +49,9 @@ dotnet run --project src/TrayCell.Probe -- watch
 
 # single spaced read with every response argument printed
 dotnet run --project src/TrayCell.Probe -- battery
+
+# watch PnP device events for 60 s while you plug/unplug something
+dotnet run --project src/TrayCell.Probe -- notify --seconds 60
 
 # the tray app
 dotnet run --project src/TrayCell.App

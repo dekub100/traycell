@@ -26,11 +26,64 @@ internal static class DevPropKeys
     public static readonly DevPropKey ProblemCode = new(new Guid("4340a6c5-93fa-4706-972c-7b648008a5a7"), 3);
 }
 
-/// <summary>Minimal cfgmgr32 interop: device enumeration and property reads.</summary>
+/// <summary>Minimal cfgmgr32 interop: device enumeration, property reads, PnP notifications.</summary>
 internal static class CfgMgr32
 {
     private const int CrSuccess = 0;
     private const int CrBufferSmall = 0x1a;
+
+    // CM_NOTIFY_FILTER_TYPE_DEVICEINSTANCE
+    private const uint NotifyFilterTypeDeviceInstance = 2;
+
+    // CM_NOTIFY_FILTER_FLAG_ALL_DEVICE_INSTANCES
+    private const uint NotifyFilterAllDeviceInstances = 0x0000_0002;
+
+    /// <summary>Callback invoked by cfgmgr32 on a system thread for each device event.</summary>
+    internal delegate uint CmNotifyCallback(
+        IntPtr notify, IntPtr context, uint action, IntPtr eventData, uint eventDataSize);
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct CmNotifyFilter
+    {
+        public uint Size;
+        public uint Flags;
+        public uint FilterType;
+        public uint Reserved;
+        public CmNotifyFilterUnion Union;
+    }
+
+    /// <summary>
+    /// Native union: GUID ClassGuid / HANDLE hTarget / WCHAR InstanceId[MAX_DEVICE_ID_LEN].
+    /// MAX_DEVICE_ID_LEN is 200, so the union is 400 bytes. Zeroed for "all instances".
+    /// </summary>
+    [StructLayout(LayoutKind.Explicit, Size = 400)]
+    internal struct CmNotifyFilterUnion
+    {
+        [FieldOffset(0)] public Guid DeviceInterfaceClass;
+        [FieldOffset(0)] public IntPtr DeviceHandle;
+    }
+
+    [DllImport("cfgmgr32.dll")]
+    private static extern int CM_Register_Notification(
+        ref CmNotifyFilter filter, IntPtr context, CmNotifyCallback callback, out IntPtr notification);
+
+    [DllImport("cfgmgr32.dll")]
+    private static extern int CM_Unregister_Notification(IntPtr notification);
+
+    /// <summary>Registers for device-instance events (arrival, start, removal).</summary>
+    internal static int RegisterDeviceNotifications(CmNotifyCallback callback, out IntPtr notification)
+    {
+        var filter = new CmNotifyFilter
+        {
+            Size = (uint)Marshal.SizeOf<CmNotifyFilter>(),
+            Flags = NotifyFilterAllDeviceInstances,
+            FilterType = NotifyFilterTypeDeviceInstance,
+        };
+
+        return CM_Register_Notification(ref filter, IntPtr.Zero, callback, out notification);
+    }
+
+    internal static void UnregisterNotification(IntPtr notification) => CM_Unregister_Notification(notification);
 
     // CM_GETIDLIST_FILTER_PRESENT | CM_GETIDLIST_FILTER_ENUMERATOR
     private const uint FilterPresent = 0x0000_0100;
