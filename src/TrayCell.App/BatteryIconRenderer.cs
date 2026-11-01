@@ -32,6 +32,24 @@ internal static class BatteryIconRenderer
         return Render(headline ?? new DeviceSnapshot(string.Empty, null, null, BatteryState.Off, null, null));
     }
 
+    /// <summary>
+    /// Renders the device the user pinned, or falls back to <see cref="RenderAggregate"/>
+    /// when nothing is pinned. A pinned device that is missing still reports as off,
+    /// rather than silently showing the other device's level.
+    /// </summary>
+    public static Icon RenderFor(IReadOnlyList<DeviceSnapshot> snapshots, string? pinnedDevice)
+    {
+        if (string.IsNullOrWhiteSpace(pinnedDevice))
+        {
+            return RenderAggregate(snapshots);
+        }
+
+        var pinned = snapshots.FirstOrDefault(snapshot =>
+            string.Equals(snapshot.Name, pinnedDevice, StringComparison.OrdinalIgnoreCase));
+
+        return Render(pinned ?? new DeviceSnapshot(pinnedDevice, null, null, BatteryState.Off, null, null));
+    }
+
     public static Icon Render(DeviceSnapshot snapshot)
     {
         var level = snapshot.Level;

@@ -15,6 +15,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private readonly BatteryMonitor _monitor;
     private readonly RazerBatterySource _mouseSource = new();
+    private readonly AppSettings _settings;
     private readonly NotifyIcon _icon;
     private readonly BatteryFlyout _flyout;
     private readonly System.Windows.Forms.Timer _timer;
@@ -23,13 +24,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     public TrayApplicationContext()
     {
+        _settings = AppSettings.Load();
         _monitor = new BatteryMonitor([_mouseSource, new ControllerBatterySource()]);
-        _flyout = new BatteryFlyout(() => _ = RefreshAsync(), ExitThread);
+        _flyout = new BatteryFlyout(() => _ = RefreshAsync(), ExitThread, PinDevice);
 
         _icon = new NotifyIcon
         {
             Visible = true,
-            Icon = BatteryIconRenderer.RenderAggregate([]),
+            Icon = BatteryIconRenderer.RenderFor([], _settings.PinnedDevice),
             Text = "TrayCell - reading...",
             ContextMenuStrip = CreateMenu(),
         };
@@ -79,15 +81,37 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         _snapshots = snapshots;
 
-        var previous = _icon.Icon;
-        _icon.Icon = BatteryIconRenderer.RenderAggregate(snapshots);
-        _icon.Text = Truncate(BuildToolTip(snapshots), 63);
-        previous?.Dispose();
+        ShowIcon();
+        _flyout.Update(snapshots, _settings.PinnedDevice);
+    }
 
-        if (_flyout.Visible)
+    /// <summary>Repaints the tray icon and tooltip from the current snapshots and pin.</summary>
+    private void ShowIcon()
+    {
+        var previous = _icon.Icon;
+        _icon.Icon = BatteryIconRenderer.RenderFor(_snapshots, _settings.PinnedDevice);
+        _icon.Text = Truncate(BuildToolTip(_snapshots, _settings.PinnedDevice), 63);
+        previous?.Dispose();
+    }
+
+    /// <summary>
+    /// Pins a device to the tray icon. Passing null returns to automatic mode.
+    /// Clicking the pinned device again in the flyout also unpins.
+    /// </summary>
+    private void PinDevice(string? deviceName)
+    {
+        var normalized = string.IsNullOrWhiteSpace(deviceName) ? null : deviceName;
+
+        if (string.Equals(_settings.PinnedDevice, normalized, StringComparison.OrdinalIgnoreCase))
         {
-            _flyout.Update(snapshots);
+            return;
         }
+
+        _settings.PinnedDevice = normalized;
+        _settings.Save();
+
+        ShowIcon();
+        _flyout.Update(_snapshots, _settings.PinnedDevice);
     }
 
     private void ToggleFlyout()
@@ -98,7 +122,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             return;
         }
 
-        _flyout.Update(_snapshots);
+        _flyout.Update(_snapshots, _settings.PinnedDevice);
         _flyout.ShowNear(Cursor.Position);
     }
 
@@ -123,6 +147,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
 
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(BuildPinMenu());
+        menu.Items.Add(new ToolStripSeparator());
 
         var refresh = new ToolStripMenuItem("Refresh now");
         refresh.Click += async (_, _) => await RefreshAsync();
@@ -133,24 +159,53 @@ internal sealed class TrayApplicationContext : ApplicationContext
         menu.Items.Add(exit);
     }
 
+    /// <summary>Submenu that chooses which device the single tray icon reports.</summary>
+    private ToolStripMenuItem BuildPinMenu()
+    {
+        var pinMenu = new ToolStripMenuItem("Tray icon shows");
+        pinMenu.DropDownItems.Add(PinItem("Automatic", null));
+
+        foreach (var snapshot in _snapshots)
+        {
+            pinMenu.DropDownItems.Add(PinItem(ShortLabel(snapshot.Name), snapshot.Name));
+        }
+
+        return pinMenu;
+    }
+
+    private ToolStripMenuItem PinItem(string label, string? deviceName)
+    {
+        var item = new ToolStripMenuItem(label)
+        {
+            Checked = string.Equals(_settings.PinnedDevice, deviceName, StringComparison.OrdinalIgnoreCase),
+        };
+
+        item.Click += (_, _) => PinDevice(deviceName);
+        return item;
+    }
+
     /// <summary>Shows the shortest useful label per device: "Mouse 57%", "Controller 100%".</summary>
-    private static string BuildToolTip(IReadOnlyList<DeviceSnapshot> snapshots)
+    private static string BuildToolTip(IReadOnlyList<DeviceSnapshot> snapshots, string? pinnedDevice)
     {
         if (snapshots.Count == 0)
         {
             return "TrayCell - reading...";
         }
 
-        var parts = snapshots.Select(snapshot =>
-        {
-            var label = ShortLabel(snapshot.Name);
-            var level = snapshot.Level is { } value ? $"{value}%" : "unavailable";
-            var stale = snapshot.State == BatteryState.Stale ? " (stale)" : string.Empty;
-            var charging = snapshot.IsCharging == true && snapshot.State == BatteryState.Ok ? " charging" : string.Empty;
-            return $"{label} {level}{stale}{charging}";
-        });
+        // The pinned device leads so its level survives tooltip truncation.
+        var ordered = snapshots
+            .OrderBy(snapshot => string.Equals(snapshot.Name, pinnedDevice, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .Select(snapshot =>
+            {
+                var label = ShortLabel(snapshot.Name);
+                var level = snapshot.Level is { } value ? $"{value}%" : "unavailable";
+                var stale = snapshot.State == BatteryState.Stale ? " (stale)" : string.Empty;
+                var charging = snapshot.IsCharging == true && snapshot.State == BatteryState.Ok ? " charging" : string.Empty;
+                var pinned = string.Equals(snapshot.Name, pinnedDevice, StringComparison.OrdinalIgnoreCase) ? " [pinned]" : string.Empty;
+                return $"{label} {level}{stale}{charging}{pinned}";
+            });
 
-        return string.Join("   ", parts);
+        return string.Join("   ", ordered);
     }
 
     private static string ShortLabel(string name) =>

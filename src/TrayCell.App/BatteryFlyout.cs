@@ -6,7 +6,8 @@ namespace TrayCell.App;
 
 /// <summary>
 /// Borderless panel shown from the tray icon: one row per device with a level bar,
-/// plus Refresh and Exit. Closes itself when it loses focus.
+/// plus Refresh and Exit. Clicking a row pins that device to the tray icon.
+/// Closes itself when it loses focus.
 /// </summary>
 internal sealed class BatteryFlyout : Form
 {
@@ -17,19 +18,24 @@ internal sealed class BatteryFlyout : Form
 
     private readonly Action _refresh;
     private readonly Action _exit;
+    private readonly Action<string?> _pin;
     private readonly Font _nameFont = new("Segoe UI", 9.5f, FontStyle.Regular);
     private readonly Font _levelFont = new("Segoe UI", 15f, FontStyle.Bold);
     private readonly Font _noteFont = new("Segoe UI", 8f, FontStyle.Regular);
     private readonly Font _actionFont = new("Segoe UI", 9f, FontStyle.Regular);
 
+    private readonly List<(Rectangle Bounds, string Device)> _rowBounds = [];
+
     private IReadOnlyList<DeviceSnapshot> _snapshots = [];
+    private string? _pinnedDevice;
     private Rectangle _refreshBounds;
     private Rectangle _exitBounds;
 
-    public BatteryFlyout(Action refresh, Action exit)
+    public BatteryFlyout(Action refresh, Action exit, Action<string?> pin)
     {
         _refresh = refresh;
         _exit = exit;
+        _pin = pin;
 
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
@@ -40,9 +46,10 @@ internal sealed class BatteryFlyout : Form
         ClientSize = new Size(PanelWidth, Edge + RowHeight + FooterHeight);
     }
 
-    public void Update(IReadOnlyList<DeviceSnapshot> snapshots)
+    public void Update(IReadOnlyList<DeviceSnapshot> snapshots, string? pinnedDevice)
     {
         _snapshots = snapshots;
+        _pinnedDevice = pinnedDevice;
         ClientSize = new Size(PanelWidth, Edge + RowHeight * Math.Max(1, snapshots.Count) + FooterHeight);
         Invalidate();
     }
@@ -77,6 +84,7 @@ internal sealed class BatteryFlyout : Form
     {
         var graphics = e.Graphics;
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        _rowBounds.Clear();
 
         using (var background = new SolidBrush(BackColor))
         {
@@ -93,7 +101,9 @@ internal sealed class BatteryFlyout : Form
 
         foreach (var snapshot in _snapshots)
         {
-            DrawRow(graphics, snapshot, y);
+            var rowBounds = new Rectangle(Edge - 8, y - 8, Width - ((Edge - 8) * 2), RowHeight - 6);
+            _rowBounds.Add((rowBounds, snapshot.Name));
+            DrawRow(graphics, snapshot, y, rowBounds);
             y += RowHeight;
         }
 
@@ -119,10 +129,11 @@ internal sealed class BatteryFlyout : Form
 
     protected override void OnMouseMove(MouseEventArgs e)
     {
-        Cursor = _refreshBounds.Contains(e.Location) || _exitBounds.Contains(e.Location)
-            ? Cursors.Hand
-            : Cursors.Default;
+        var interactive = _refreshBounds.Contains(e.Location)
+                          || _exitBounds.Contains(e.Location)
+                          || _rowBounds.Any(row => row.Bounds.Contains(e.Location));
 
+        Cursor = interactive ? Cursors.Hand : Cursors.Default;
         base.OnMouseMove(e);
     }
 
@@ -137,6 +148,20 @@ internal sealed class BatteryFlyout : Form
             else if (_exitBounds.Contains(e.Location))
             {
                 _exit();
+            }
+            else
+            {
+                foreach (var (bounds, device) in _rowBounds)
+                {
+                    if (!bounds.Contains(e.Location))
+                    {
+                        continue;
+                    }
+
+                    // Clicking the pinned device again returns to automatic mode.
+                    _pin(string.Equals(device, _pinnedDevice, StringComparison.OrdinalIgnoreCase) ? null : device);
+                    break;
+                }
             }
         }
 
@@ -156,8 +181,22 @@ internal sealed class BatteryFlyout : Form
         base.Dispose(disposing);
     }
 
-    private void DrawRow(Graphics graphics, DeviceSnapshot snapshot, int y)
+    private void DrawRow(Graphics graphics, DeviceSnapshot snapshot, int y, Rectangle rowBounds)
     {
+        var isPinned = string.Equals(snapshot.Name, _pinnedDevice, StringComparison.OrdinalIgnoreCase);
+
+        if (isPinned)
+        {
+            using var highlight = new SolidBrush(Color.FromArgb(40, 40, 45));
+            using var highlightPath = Rounded(rowBounds, 6);
+            graphics.FillPath(highlight, highlightPath);
+
+            var accent = new Rectangle(rowBounds.X + 2, rowBounds.Y + 8, 3, rowBounds.Height - 16);
+            using var accentBrush = new SolidBrush(Color.FromArgb(122, 178, 255));
+            using var accentPath = Rounded(accent, 1);
+            graphics.FillPath(accentBrush, accentPath);
+        }
+
         var textColor = snapshot.State == BatteryState.Off
             ? Color.FromArgb(150, 150, 150)
             : Color.FromArgb(238, 238, 238);

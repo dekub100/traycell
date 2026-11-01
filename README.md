@@ -6,7 +6,7 @@ The goal is a glanceable, always-on percentage per device, with no Razer Synapse
 
 ## Status
 
-Research complete, implementation not started. Two documents:
+Research complete and implemented. Two documents:
 
 - [`docs/battery-tray-handoff.md`](docs/battery-tray-handoff.md) — the original research, including dead ends and reasoning.
 - [`docs/hardware-findings.md`](docs/hardware-findings.md) — what has since been **verified on the target machine**: exact device IDs, protocol bytes, CRC rule.
@@ -18,7 +18,7 @@ Research complete, implementation not started. Two documents:
 
 ## Design in one paragraph
 
-One process, two independent pollers on a 30–60 s timer, and a per-device state model of `Level`, `Charging`, `LastUpdated`, `State = Ok | Stale | Off`. A number is never shown without its staleness marked, because both devices can silently stop reporting (mouse asleep, controller switched to the 2.4 GHz dongle). The UI is a single tray icon that shows the battery most in need of attention; left-clicking it opens a small flyout with a row and level bar per device, plus Refresh and Exit.
+One process, two independent pollers on a 30–60 s timer, and a per-device state model of `Level`, `Charging`, `LastUpdated`, `State = Ok | Stale | Off`. A number is never shown without its staleness marked, because both devices can silently stop reporting (mouse asleep, controller switched to the 2.4 GHz dongle). The UI is a single tray icon; left-clicking it opens a small flyout with a row and level bar per device, plus Refresh and Exit. The icon follows the lowest live level by default, or a device you pin by clicking its row (or via the "Tray icon shows" menu); the pin is saved to `%LOCALAPPDATA%\TrayCell\settings.json`.
 
 Planned stack: C# / .NET 10 on Windows — `NotifyIcon` for the tray, cfgmgr32 (`CM_Get_DevNode_PropertyW`) for the controller, and raw `hid.dll` / `setupapi` feature reports for the Razer mouse. No NuGet packages.
 
@@ -27,7 +27,7 @@ Planned stack: C# / .NET 10 on Windows — `NotifyIcon` for the tray, cfgmgr32 (
 ```
 src/TrayCell.Core/     pollers, native interop, Ok/Stale/Off state model
 src/TrayCell.Probe/    console harness that exercises both devices independently
-src/TrayCell.App/      WinForms tray app (two icons, shared context menu)
+src/TrayCell.App/      WinForms tray app (single icon, flyout, context menu)
 ```
 
 ## Building and running
