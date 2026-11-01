@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>TrayCell</RootNamespace>
+    <AssemblyName>TrayCell.Core</AssemblyName>
+  </PropertyGroup>
+
+</Project>

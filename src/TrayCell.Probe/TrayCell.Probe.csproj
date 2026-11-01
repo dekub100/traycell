@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>TrayCell.Probe</AssemblyName>
+    <RootNamespace>TrayCell.Probe</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TrayCell.Core\TrayCell.Core.csproj" />
+  </ItemGroup>
+
+</Project>

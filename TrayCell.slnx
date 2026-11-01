@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TrayCell.App/TrayCell.App.csproj" />
+    <Project Path="src/TrayCell.Core/TrayCell.Core.csproj" />
+    <Project Path="src/TrayCell.Probe/TrayCell.Probe.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>TrayCell.App</AssemblyName>
+    <RootNamespace>TrayCell.App</RootNamespace>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TrayCell.Core\TrayCell.Core.csproj" />
+  </ItemGroup>
+
+</Project>
