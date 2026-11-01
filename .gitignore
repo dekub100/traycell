@@ -1,0 +1,49 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+artifacts/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.cache
+
+# .NET / Rider / Visual Studio
+.vs/
+.vscode/
+.idea/
+*.DotSettings.user
+*.nupkg
+*.snupkg
+
+# Publish output
+[Pp]ublish/
+publish/
+*.pdb
+*.exe.config
+*.dll.config
+*.runtimeconfig.dev.json
+
+# Test / coverage
+*.TestResults/
+TestResults/
+coverage*.json
+coverage*.xml
+coverage*.info
+
+# Installer / packaging scratch
+*.msi
+*.msix
+*.msixbundle
+*.appxupload
+*.zip
+*.7z
+
+# OS noise
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
