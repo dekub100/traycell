@@ -18,7 +18,7 @@ Research complete, implementation not started. Two documents:
 
 ## Design in one paragraph
 
-One process, two independent pollers on a 30–60 s timer, and a per-device state model of `Level`, `Charging`, `LastUpdated`, `State = Ok | Stale | Off`. A number is never shown without its staleness marked, because both devices can silently stop reporting (mouse asleep, controller switched to the 2.4 GHz dongle). Tray UI is either two icons with the percentage drawn on them or one icon with a combined tooltip.
+One process, two independent pollers on a 30–60 s timer, and a per-device state model of `Level`, `Charging`, `LastUpdated`, `State = Ok | Stale | Off`. A number is never shown without its staleness marked, because both devices can silently stop reporting (mouse asleep, controller switched to the 2.4 GHz dongle). The UI is a single tray icon that shows the battery most in need of attention; left-clicking it opens a small flyout with a row and level bar per device, plus Refresh and Exit.
 
 Planned stack: C# / .NET 10 on Windows — `NotifyIcon` for the tray, cfgmgr32 (`CM_Get_DevNode_PropertyW`) for the controller, and raw `hid.dll` / `setupapi` feature reports for the Razer mouse. No NuGet packages.
 
@@ -57,7 +57,7 @@ dotnet run --project src/TrayCell.App
 ## Known open questions
 
 - ~~Fork an existing Viper V3 Pro tray project, or write everything from scratch?~~ Answered: scratch, C#.
-- Two tray icons or one combined icon/tooltip?
+- ~~Two tray icons or one combined icon/tooltip?~~ Answered: one icon, left-click opens a flyout.
 - Does the mouse also need to be monitored while charging over cable?
 - Which SE dongle is in use (HyperSpeed vs HyperPolling), and what are its real hardware IDs?
 

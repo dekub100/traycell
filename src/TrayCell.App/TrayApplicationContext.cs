@@ -6,7 +6,7 @@ using TrayCell.Monitoring;
 namespace TrayCell.App;
 
 /// <summary>
-/// Owns the two tray icons, the poll timer and the context menu.
+/// Owns the single tray icon, the flyout panel and the poll timer.
 /// Polling happens off the UI thread; the UI only touches ready snapshots.
 /// </summary>
 internal sealed class TrayApplicationContext : ApplicationContext
@@ -15,9 +15,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private readonly BatteryMonitor _monitor;
     private readonly RazerBatterySource _mouseSource = new();
-    private readonly NotifyIcon _mouseIcon;
-    private readonly NotifyIcon _controllerIcon;
-    private readonly ContextMenuStrip _menu;
+    private readonly NotifyIcon _icon;
+    private readonly BatteryFlyout _flyout;
     private readonly System.Windows.Forms.Timer _timer;
     private IReadOnlyList<DeviceSnapshot> _snapshots = [];
     private bool _polling;
@@ -25,12 +24,23 @@ internal sealed class TrayApplicationContext : ApplicationContext
     public TrayApplicationContext()
     {
         _monitor = new BatteryMonitor([_mouseSource, new ControllerBatterySource()]);
+        _flyout = new BatteryFlyout(() => _ = RefreshAsync(), ExitThread);
 
-        _menu = new ContextMenuStrip();
-        _menu.Opening += (_, _) => RebuildMenu();
+        _icon = new NotifyIcon
+        {
+            Visible = true,
+            Icon = BatteryIconRenderer.RenderAggregate([]),
+            Text = "TrayCell - reading...",
+            ContextMenuStrip = CreateMenu(),
+        };
 
-        _mouseIcon = CreateTrayIcon();
-        _controllerIcon = CreateTrayIcon();
+        _icon.MouseClick += (_, args) =>
+        {
+            if (args.Button == MouseButtons.Left)
+            {
+                ToggleFlyout();
+            }
+        };
 
         _timer = new System.Windows.Forms.Timer { Interval = (int)PollInterval.TotalMilliseconds };
         _timer.Tick += async (_, _) => await RefreshAsync();
@@ -39,18 +49,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _ = RefreshAsync();
     }
 
-    private NotifyIcon CreateTrayIcon()
+    private ContextMenuStrip CreateMenu()
     {
-        var icon = new NotifyIcon
-        {
-            ContextMenuStrip = _menu,
-            Icon = BatteryIconRenderer.Render(new DeviceSnapshot("", null, null, BatteryState.Off, null, null)),
-            Text = "TrayCell - reading...",
-            Visible = true,
-        };
-
-        icon.DoubleClick += async (_, _) => await RefreshAsync();
-        return icon;
+        var menu = new ContextMenuStrip();
+        menu.Opening += (_, _) => RebuildMenu(menu);
+        return menu;
     }
 
     private async Task RefreshAsync()
@@ -64,7 +67,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
         try
         {
             var snapshots = await Task.Run(_monitor.Poll);
-            _snapshots = snapshots;
             Apply(snapshots);
         }
         finally
@@ -75,35 +77,38 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void Apply(IReadOnlyList<DeviceSnapshot> snapshots)
     {
-        var mouse = Find(snapshots, _mouseSource.Name);
-        var controller = Find(snapshots, ControllerBatterySource.DefaultFriendlyName);
+        _snapshots = snapshots;
 
-        if (mouse is not null)
-        {
-            Update(_mouseIcon, mouse);
-        }
-
-        if (controller is not null)
-        {
-            Update(_controllerIcon, controller);
-        }
-    }
-
-    private static void Update(NotifyIcon notifyIcon, DeviceSnapshot snapshot)
-    {
-        var previous = notifyIcon.Icon;
-        notifyIcon.Icon = BatteryIconRenderer.Render(snapshot);
-        notifyIcon.Text = Truncate(snapshot.ToolTipText(), 63);
+        var previous = _icon.Icon;
+        _icon.Icon = BatteryIconRenderer.RenderAggregate(snapshots);
+        _icon.Text = Truncate(BuildToolTip(snapshots), 63);
         previous?.Dispose();
+
+        if (_flyout.Visible)
+        {
+            _flyout.Update(snapshots);
+        }
     }
 
-    private void RebuildMenu()
+    private void ToggleFlyout()
     {
-        _menu.Items.Clear();
+        if (_flyout.Visible)
+        {
+            _flyout.Hide();
+            return;
+        }
+
+        _flyout.Update(_snapshots);
+        _flyout.ShowNear(Cursor.Position);
+    }
+
+    private void RebuildMenu(ContextMenuStrip menu)
+    {
+        menu.Items.Clear();
 
         if (_snapshots.Count == 0)
         {
-            _menu.Items.Add(new ToolStripMenuItem("Reading devices...") { Enabled = false });
+            menu.Items.Add(new ToolStripMenuItem("Reading devices...") { Enabled = false });
         }
 
         foreach (var snapshot in _snapshots)
@@ -114,34 +119,54 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 item.ToolTipText = detail;
             }
 
-            _menu.Items.Add(item);
+            menu.Items.Add(item);
         }
 
-        _menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(new ToolStripSeparator());
 
         var refresh = new ToolStripMenuItem("Refresh now");
         refresh.Click += async (_, _) => await RefreshAsync();
-        _menu.Items.Add(refresh);
+        menu.Items.Add(refresh);
 
         var exit = new ToolStripMenuItem("Exit");
         exit.Click += (_, _) => ExitThread();
-        _menu.Items.Add(exit);
+        menu.Items.Add(exit);
     }
 
-    private static DeviceSnapshot? Find(IReadOnlyList<DeviceSnapshot> snapshots, string name) =>
-        snapshots.FirstOrDefault(snapshot => string.Equals(snapshot.Name, name, StringComparison.OrdinalIgnoreCase));
+    /// <summary>Shows the shortest useful label per device: "Mouse 57%", "Controller 100%".</summary>
+    private static string BuildToolTip(IReadOnlyList<DeviceSnapshot> snapshots)
+    {
+        if (snapshots.Count == 0)
+        {
+            return "TrayCell - reading...";
+        }
+
+        var parts = snapshots.Select(snapshot =>
+        {
+            var label = ShortLabel(snapshot.Name);
+            var level = snapshot.Level is { } value ? $"{value}%" : "unavailable";
+            var stale = snapshot.State == BatteryState.Stale ? " (stale)" : string.Empty;
+            var charging = snapshot.IsCharging == true && snapshot.State == BatteryState.Ok ? " charging" : string.Empty;
+            return $"{label} {level}{stale}{charging}";
+        });
+
+        return string.Join("   ", parts);
+    }
+
+    private static string ShortLabel(string name) =>
+        name.Contains("Razer", StringComparison.OrdinalIgnoreCase) ? "Mouse"
+        : name.Contains("8BitDo", StringComparison.OrdinalIgnoreCase) ? "Controller"
+        : name;
 
     private static string Truncate(string text, int maxLength) =>
-        text.Length <= maxLength ? text : text[..(maxLength - 1)] + "...";
+        text.Length <= maxLength ? text : text[..(maxLength - 3)] + "...";
 
     protected override void ExitThreadCore()
     {
         _timer.Stop();
-        _mouseIcon.Visible = false;
-        _controllerIcon.Visible = false;
-        _mouseIcon.Dispose();
-        _controllerIcon.Dispose();
-        _menu.Dispose();
+        _icon.Visible = false;
+        _icon.Dispose();
+        _flyout.Dispose();
         _mouseSource.Dispose();
         base.ExitThreadCore();
     }

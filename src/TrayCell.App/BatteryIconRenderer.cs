@@ -17,6 +17,21 @@ internal static class BatteryIconRenderer
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool DestroyIcon(IntPtr handle);
 
+    /// <summary>
+    /// Picks the device worth showing on the single tray icon: the lowest live level,
+    /// falling back to the lowest stale one. Charging is drawn even when stale.
+    /// </summary>
+    public static Icon RenderAggregate(IReadOnlyList<DeviceSnapshot> snapshots)
+    {
+        var headline = snapshots
+            .Where(snapshot => snapshot.Level is not null)
+            .OrderBy(snapshot => snapshot.State == BatteryState.Ok ? 0 : 1)
+            .ThenBy(snapshot => snapshot.Level!.Value)
+            .FirstOrDefault();
+
+        return Render(headline ?? new DeviceSnapshot(string.Empty, null, null, BatteryState.Off, null, null));
+    }
+
     public static Icon Render(DeviceSnapshot snapshot)
     {
         var level = snapshot.Level;
