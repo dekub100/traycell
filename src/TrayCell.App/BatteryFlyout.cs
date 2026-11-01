@@ -262,8 +262,12 @@ internal sealed class BatteryFlyout : Form
 
         if (note.Length > 0)
         {
+            var noteColor = snapshot.IsCharging == true && snapshot.State == BatteryState.Ok
+                ? Theme.Accent
+                : Theme.Muted;
+
             TextRenderer.DrawText(graphics, note, _noteFont,
-                new Point(contentX, card.Y + 27), Theme.Muted,
+                new Point(contentX, card.Y + 26), noteColor,
                 TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
         }
 
@@ -273,7 +277,8 @@ internal sealed class BatteryFlyout : Form
             return;
         }
 
-        var bar = new Rectangle(contentX, card.Y + 36, contentWidth, 3);
+        // A note sits directly above the bar, so the bar moves down to keep clear of it.
+        var bar = new Rectangle(contentX, card.Y + (note.Length > 0 ? 42 : 36), contentWidth, 3);
         using (var track = new SolidBrush(Theme.Border))
         {
             graphics.FillRectangle(track, bar);
