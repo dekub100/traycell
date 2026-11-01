@@ -161,3 +161,13 @@ otherwise return a *disconnected* reading, which the monitor turns into `Off` im
   monitor goes straight to `Off`, rather than showing a stale percentage for minutes.
   The cost is that an idle mouse shows as not responding until it is moved and the next
   8 s poll succeeds.
+
+## Dead ends — do not repeat
+
+- **XInput battery query** over USB or the 2.4 GHz dongle: returns the placeholder
+  `wired` / `full`, never a percentage.
+- **D-input over the dongle**: exposes no battery data.
+- **8BitDo vendor software**: not required, and its protocol is not documented here.
+- **USBPcap HID capture of the dongle**: no useful battery traffic.
+- **BLE node battery property while the node is disconnected**: a cached value from the
+  last Bluetooth session, not the current level (see above).

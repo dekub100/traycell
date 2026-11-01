@@ -1,71 +1,104 @@
 # TrayCell
 
-A Windows system tray app that shows the battery level of wireless peripherals — currently a **Razer Viper V3 Pro SE** mouse and an **8BitDo Ultimate 2C Wireless** controller.
+[![CI](https://github.com/dekub100/traycell/actions/workflows/ci.yml/badge.svg)](https://github.com/dekub100/traycell/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-The goal is a glanceable, always-on percentage per device, with no Razer Synapse and no vendor software.
+Battery levels for your wireless peripherals, in the Windows tray.
 
-## Status
+TrayCell is a small native C# app that reads the battery level of a **Razer Viper V3 Pro SE**
+and an **8BitDo Ultimate 2C** and shows it in a single tray icon. No Razer Synapse, no 8BitDo
+software, no background services, no telemetry.
 
-Research complete and implemented. Two documents:
+## 🤖 AI-Generated
 
-- [`docs/battery-tray-handoff.md`](docs/battery-tray-handoff.md) — the original research, including dead ends and reasoning.
-- [`docs/hardware-findings.md`](docs/hardware-findings.md) — what has since been **verified on the target machine**: exact device IDs, protocol bytes, CRC rule.
+This project was written entirely by AI ([OpenCode](https://github.com/anomalyco/opencode)
+with DeepSeek V4.1 Flash). I test it against my own hardware, but the approach isn't always
+idiomatic — issues and PRs are welcome.
 
-| Device | Feasible | Transport | State |
-|---|---|---|---|
-| 8BitDo Ultimate 2C | Yes, verified | BLE PnP device property (`{104EA319-...} 2`) | Read from code: 100% over Bluetooth. Node `BTHLE\DEV_...`, matched by friendly name. Over USB or the 2.4 GHz dongle Windows presents XInput instead, which has **no percentage** — the app then shows "connected, no battery level". |
-| Razer Viper V3 Pro SE | Yes, verified | Razer HID feature reports, class `0x07` | Read from code: 57% (level in `arguments[1]`). PID `0x00DF`, channel `MI_00`, 91-byte feature report. A sleeping mouse answers `0x04` and shows as stale. |
+It's a personal project: built for my own setup and shared publicly as-is, in case someone
+else finds it useful. No support commitment — if it works for you too, great.
 
-## Design in one paragraph
+## Features
 
-One process, two independent pollers on an 8 s timer, PnP device-instance notifications for immediate refreshes, and a per-device state model of `Level`, `Charging`, `LastUpdated`, `State = Ok | Stale | Wired | Off`. A number is never shown without its staleness marked, because both devices can silently stop reporting (mouse asleep, controller switched to the 2.4 GHz dongle). A device that stops answering drops its number at once rather than lingering as stale — the mouse dongle has no link event and a sleeping mouse answers exactly like a switched-off one, so "not responding" is the honest state. `Wired` means the device is connected over a transport with no percentage (XInput) — the app says so instead of showing a cached number. The UI is a single tray icon; left-clicking it opens a small flyout with a row and level bar per device, plus Refresh and Exit. The icon follows the lowest live level by default, or a device you pin by clicking its row (or via the "Tray icon shows" menu); the pin is saved to `%LOCALAPPDATA%\TrayCell\settings.json`.
+- **One tray icon** — left-click for a flyout with a row and level bar per device.
+- **Pin a device** — click a row (or use *Tray icon shows*) to keep either device on the
+  icon; the choice is remembered between runs.
+- **Honest states** — a number is never shown as current once the device stops answering.
+  Stale values are marked, disconnected devices drop their number, and a transport with no
+  percentage says so instead of guessing.
+- **Charging indicator** — a bolt is drawn while the mouse reports charging.
+- **No dependencies** — raw `hid.dll` / `setupapi` / `cfgmgr32` interop; no NuGet packages.
 
-Planned stack: C# / .NET 10 on Windows — `NotifyIcon` for the tray, cfgmgr32 (`CM_Get_DevNode_PropertyW`) for the controller, and raw `hid.dll` / `setupapi` feature reports for the Razer mouse. No NuGet packages.
+## Supported devices
 
-## Project layout
+| Device | Transport | Battery |
+|---|---|---|
+| Razer Viper V3 Pro SE | 2.4 GHz dongle or USB cable | Percentage via Razer HID feature reports |
+| 8BitDo Ultimate 2C | Bluetooth | Percentage from the Windows Bluetooth device property |
+| 8BitDo Ultimate 2C | USB cable or 2.4 GHz dongle | Connected, but **no percentage** — XInput only reports wired/full |
 
-```
-src/TrayCell.Core/     pollers, native interop, Ok/Stale/Off state model
-src/TrayCell.Probe/    console harness that exercises both devices independently
-src/TrayCell.App/      WinForms tray app (single icon, flyout, context menu)
-```
+Other devices using the same transports may work; they have not been tested.
 
-## Building and running
+## Requirements
+
+- Windows 10 or 11, x64.
+- Nothing else for a release build — it is self-contained.
+- To build from source: the .NET 10 SDK.
+
+## Install
+
+1. Download `TrayCell-v*-win-x64.zip` from
+   [Releases](https://github.com/dekub100/traycell/releases).
+2. Extract it anywhere and run `TrayCell.App.exe`.
+
+The executable is unsigned, so Windows SmartScreen may ask for confirmation the first time.
+
+## Usage
+
+- **Left-click** the tray icon to open the flyout.
+- **Click a device row** to pin that device to the icon; click it again to return to
+  automatic (the lowest live level).
+- **Right-click** for the menu: current levels, *Tray icon shows*, *Refresh now*, *Exit*.
+- **Esc** or clicking elsewhere closes the flyout.
+
+Icon states: green / amber / red fill is the level, a slash means the value is stale, a
+centre dot means connected but unmetered, and a grey outline means not connected.
+
+## How it works
+
+The mouse speaks Razer's 90-byte HID feature-report protocol through its dongle; the
+controller is read from the Bluetooth battery property that Windows itself exposes. Protocol
+details, response codes and dead ends are in
+[`docs/hardware-findings.md`](docs/hardware-findings.md).
+
+## Known limitations
+
+- **A sleeping mouse looks switched off.** The dongle answers "no response" for both, so an
+  idle mouse shows as not connected until it is moved.
+- **No percentage over XInput.** On USB or the 2.4 GHz dongle the controller reports only
+  "wired / full"; the app shows "connected, no battery level" rather than inventing a number.
+- **Device matching is by name and VID/PID.** A renamed controller or a different Razer model
+  may not be picked up.
+- **Windows only** — it uses WinForms and Windows device APIs.
+
+## Build from source
 
 ```powershell
 dotnet build TrayCell.slnx
-
-# both devices
-dotnet run --project src/TrayCell.Probe -- all
-
-# controller only (Bluetooth PnP property)
-dotnet run --project src/TrayCell.Probe -- controller
-
-# mouse only (enumerates Razer HID collections, tries the battery query on each)
-dotnet run --project src/TrayCell.Probe -- razer
-
-# watch the mouse for 30 s while you move it
-dotnet run --project src/TrayCell.Probe -- watch
-
-# single spaced read with every response argument printed
-dotnet run --project src/TrayCell.Probe -- battery
-
-# watch PnP device events for 60 s while you plug/unplug something
-dotnet run --project src/TrayCell.Probe -- notify --seconds 60
-
-# the tray app
 dotnet run --project src/TrayCell.App
 ```
 
-## Known open questions
+`TrayCell.Probe` is a console harness for the hardware side; see
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for its commands.
 
-- ~~Fork an existing Viper V3 Pro tray project, or write everything from scratch?~~ Answered: scratch, C#.
-- ~~Two tray icons or one combined icon/tooltip?~~ Answered: one icon, left-click opens a flyout.
-- Does the mouse also need to be monitored while charging over cable?
-- Which SE dongle is in use (HyperSpeed vs HyperPolling), and what are its real hardware IDs?
+## Documentation
 
-## Dead ends — do not repeat
+- [`docs/hardware-findings.md`](docs/hardware-findings.md) — verified protocol, device IDs,
+  response codes.
+- [`docs/battery-tray-handoff.md`](docs/battery-tray-handoff.md) — original research and
+  reasoning.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — build, probe, CI and commit conventions.
 
-XInput battery query over the 2.4 GHz dongle (returns a placeholder `WIRED`/`FULL`), D-input over the dongle, 8BitDo vendor software, and USBPcap HID capture of the dongle.
+## License
 
-The same applies to the controller on a **USB cable**: XInput reports `wired`/`full` and nothing else. The only percentage Windows ever exposes for this controller is the Bluetooth property, and only while the Bluetooth link is actually up — see [`docs/hardware-findings.md`](docs/hardware-findings.md#controller-transport-state).
+MIT — see [`LICENSE`](LICENSE).
