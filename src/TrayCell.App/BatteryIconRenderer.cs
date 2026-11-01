@@ -8,10 +8,10 @@ namespace TrayCell.App;
 /// <summary>Draws a small battery icon whose fill and colour encode the level.</summary>
 internal static class BatteryIconRenderer
 {
-    private static readonly Color Good = Color.FromArgb(0, 200, 83);
-    private static readonly Color Warn = Color.FromArgb(255, 179, 0);
-    private static readonly Color Low = Color.FromArgb(244, 67, 54);
-    private static readonly Color Unknown = Color.FromArgb(160, 160, 160);
+    private static readonly Color Good = Theme.Green;
+    private static readonly Color Mid = Theme.Accent;
+    private static readonly Color Low = Theme.Red;
+    private static readonly Color Unknown = Theme.Muted;
 
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -55,7 +55,9 @@ internal static class BatteryIconRenderer
         var level = snapshot.Level;
         var color = snapshot.State == BatteryState.Off || level is null
             ? Unknown
-            : level >= 50 ? Good : level >= 20 ? Warn : Low;
+            : level >= 50 ? Good : level >= 20 ? Mid : Low;
+
+        var shellColor = snapshot.State is BatteryState.Off or BatteryState.Wired ? Theme.Muted : Theme.Text;
 
         using var bitmap = new Bitmap(32, 32);
         using var graphics = Graphics.FromImage(bitmap);
@@ -63,7 +65,7 @@ internal static class BatteryIconRenderer
         graphics.Clear(Color.Transparent);
 
         var body = new Rectangle(2, 8, 22, 16);
-        using (var shell = new Pen(Color.FromArgb(240, 240, 240), 2f))
+        using (var shell = new Pen(shellColor, 2f))
         using (var shellPath = RoundedRectangle(body, 3))
         {
             graphics.DrawPath(shell, shellPath);
@@ -79,7 +81,7 @@ internal static class BatteryIconRenderer
 
         if (snapshot.State == BatteryState.Stale)
         {
-            using var slash = new Pen(Color.FromArgb(200, 255, 255, 255), 2f);
+            using var slash = new Pen(Theme.Muted, 2f);
             graphics.DrawLine(slash, 4, 24, 22, 8);
         }
 
@@ -87,13 +89,13 @@ internal static class BatteryIconRenderer
         // from "off" without inventing a fill level.
         if (snapshot.State == BatteryState.Wired)
         {
-            using var dot = new SolidBrush(Color.FromArgb(210, 210, 210));
+            using var dot = new SolidBrush(Theme.Muted);
             graphics.FillEllipse(dot, 11, 14, 4, 4);
         }
 
         if (snapshot.IsCharging == true)
         {
-            using var bolt = new SolidBrush(Color.FromArgb(255, 255, 255));
+            using var bolt = new SolidBrush(Theme.Text);
             var points = new[]
             {
                 new PointF(16, 4), new PointF(11, 15), new PointF(15, 15),

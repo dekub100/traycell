@@ -5,24 +5,26 @@ using TrayCell.Monitoring;
 namespace TrayCell.App;
 
 /// <summary>
-/// Borderless panel shown from the tray icon: one row per device with a level bar,
-/// plus Refresh and Exit. Clicking a row pins that device to the tray icon.
+/// Borderless panel shown from the tray icon: one card per device with a level bar,
+/// plus refresh and exit. Clicking a row pins that device to the tray icon.
+/// Styled after the dekub.eu design system: flat, square, 1px borders, violet accent.
 /// Closes itself when it loses focus.
 /// </summary>
 internal sealed class BatteryFlyout : Form
 {
     private const int Edge = 16;
-    private const int RowHeight = 58;
+    private const int RowHeight = 66;
     private const int FooterHeight = 40;
     private const int PanelWidth = 320;
+    private const int CardInset = 8;
 
     private readonly Action _refresh;
     private readonly Action _exit;
     private readonly Action<string?> _pin;
-    private readonly Font _nameFont = new("Segoe UI", 9.5f, FontStyle.Regular);
-    private readonly Font _levelFont = new("Segoe UI", 15f, FontStyle.Bold);
-    private readonly Font _noteFont = new("Segoe UI", 8f, FontStyle.Regular);
-    private readonly Font _actionFont = new("Segoe UI", 9f, FontStyle.Regular);
+    private readonly Font _nameFont = new("Segoe UI Semibold", 9.5f, FontStyle.Regular);
+    private readonly Font _levelFont = new("Consolas", 14f, FontStyle.Bold);
+    private readonly Font _noteFont = new("Consolas", 9f, FontStyle.Regular);
+    private readonly Font _actionFont = new("Consolas", 9.5f, FontStyle.Regular);
 
     private readonly List<(Rectangle Bounds, string Device)> _rowBounds = [];
 
@@ -30,6 +32,9 @@ internal sealed class BatteryFlyout : Form
     private string? _pinnedDevice;
     private Rectangle _refreshBounds;
     private Rectangle _exitBounds;
+    private int _hoveredRow = -1;
+    private bool _hoverRefresh;
+    private bool _hoverExit;
 
     public BatteryFlyout(Action refresh, Action exit, Action<string?> pin)
     {
@@ -42,7 +47,7 @@ internal sealed class BatteryFlyout : Form
         TopMost = true;
         StartPosition = FormStartPosition.Manual;
         DoubleBuffered = true;
-        BackColor = Color.FromArgb(28, 28, 30);
+        BackColor = Theme.Background;
         ClientSize = new Size(PanelWidth, Edge + RowHeight + FooterHeight);
     }
 
@@ -71,39 +76,41 @@ internal sealed class BatteryFlyout : Form
         Activate();
     }
 
-    protected override void OnSizeChanged(EventArgs e)
-    {
-        base.OnSizeChanged(e);
-
-        var bounds = new Rectangle(0, 0, Width, Height);
-        using var path = Rounded(bounds, 10);
-        Region = new Region(path);
-    }
-
     protected override void OnPaint(PaintEventArgs e)
     {
         var graphics = e.Graphics;
-        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        graphics.SmoothingMode = SmoothingMode.None;
         _rowBounds.Clear();
 
-        using (var background = new SolidBrush(BackColor))
+        using (var background = new SolidBrush(Theme.Background))
         {
             graphics.FillRectangle(background, ClientRectangle);
+        }
+
+        using (var border = new Pen(Theme.Border))
+        {
+            graphics.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
         }
 
         var y = Edge;
 
         if (_snapshots.Count == 0)
         {
-            TextRenderer.DrawText(graphics, "Reading devices...", _nameFont,
-                new Point(Edge, y), Color.Gainsboro);
+            TextRenderer.DrawText(graphics, "reading...", _noteFont,
+                new Point(Edge, y), Theme.Muted);
         }
 
         foreach (var snapshot in _snapshots)
         {
-            var rowBounds = new Rectangle(Edge - 8, y - 8, Width - ((Edge - 8) * 2), RowHeight - 6);
-            _rowBounds.Add((rowBounds, snapshot.Name));
-            DrawRow(graphics, snapshot, y, rowBounds);
+            var card = new Rectangle(
+                Edge - CardInset, y - CardInset,
+                Width - ((Edge - CardInset) * 2), RowHeight - 6);
+
+            var isPinned = string.Equals(snapshot.Name, _pinnedDevice, StringComparison.OrdinalIgnoreCase);
+            var isHovered = _rowBounds.Count == _hoveredRow;
+
+            _rowBounds.Add((card, snapshot.Name));
+            DrawRow(graphics, snapshot, card, isPinned, isHovered);
             y += RowHeight;
         }
 
@@ -129,12 +136,42 @@ internal sealed class BatteryFlyout : Form
 
     protected override void OnMouseMove(MouseEventArgs e)
     {
-        var interactive = _refreshBounds.Contains(e.Location)
-                          || _exitBounds.Contains(e.Location)
-                          || _rowBounds.Any(row => row.Bounds.Contains(e.Location));
+        var hoveredRow = -1;
+        for (var i = 0; i < _rowBounds.Count; i++)
+        {
+            if (_rowBounds[i].Bounds.Contains(e.Location))
+            {
+                hoveredRow = i;
+                break;
+            }
+        }
 
-        Cursor = interactive ? Cursors.Hand : Cursors.Default;
+        var hoverRefresh = _refreshBounds.Contains(e.Location);
+        var hoverExit = _exitBounds.Contains(e.Location);
+
+        if (hoveredRow != _hoveredRow || hoverRefresh != _hoverRefresh || hoverExit != _hoverExit)
+        {
+            _hoveredRow = hoveredRow;
+            _hoverRefresh = hoverRefresh;
+            _hoverExit = hoverExit;
+            Invalidate();
+        }
+
+        Cursor = hoveredRow >= 0 || hoverRefresh || hoverExit ? Cursors.Hand : Cursors.Default;
         base.OnMouseMove(e);
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        if (_hoveredRow != -1 || _hoverRefresh || _hoverExit)
+        {
+            _hoveredRow = -1;
+            _hoverRefresh = false;
+            _hoverExit = false;
+            Invalidate();
+        }
+
+        base.OnMouseLeave(e);
     }
 
     protected override void OnMouseClick(MouseEventArgs e)
@@ -181,34 +218,38 @@ internal sealed class BatteryFlyout : Form
         base.Dispose(disposing);
     }
 
-    private void DrawRow(Graphics graphics, DeviceSnapshot snapshot, int y, Rectangle rowBounds)
+    private void DrawRow(Graphics graphics, DeviceSnapshot snapshot, Rectangle card, bool isPinned, bool isHovered)
     {
-        var isPinned = string.Equals(snapshot.Name, _pinnedDevice, StringComparison.OrdinalIgnoreCase);
+        using (var fill = new SolidBrush(isPinned ? Theme.AccentSoft : Theme.Surface))
+        {
+            graphics.FillRectangle(fill, card);
+        }
+
+        var borderColor = isPinned ? Theme.Accent : isHovered ? Theme.BorderHover : Theme.Border;
+        using (var border = new Pen(borderColor))
+        {
+            graphics.DrawRectangle(border, card.X, card.Y, card.Width - 1, card.Height - 1);
+        }
 
         if (isPinned)
         {
-            using var highlight = new SolidBrush(Color.FromArgb(40, 40, 45));
-            using var highlightPath = Rounded(rowBounds, 6);
-            graphics.FillPath(highlight, highlightPath);
-
-            var accent = new Rectangle(rowBounds.X + 2, rowBounds.Y + 8, 3, rowBounds.Height - 16);
-            using var accentBrush = new SolidBrush(Color.FromArgb(122, 178, 255));
-            using var accentPath = Rounded(accent, 1);
-            graphics.FillPath(accentBrush, accentPath);
+            using var accent = new SolidBrush(Theme.Accent);
+            graphics.FillRectangle(accent, card.X, card.Y, 2, card.Height);
         }
 
-        var textColor = snapshot.State == BatteryState.Off
-            ? Color.FromArgb(150, 150, 150)
-            : Color.FromArgb(238, 238, 238);
+        var contentX = card.X + 18;
+        var contentWidth = card.Width - 36;
+        var textColor = snapshot.State == BatteryState.Off ? Theme.Muted : Theme.Text;
 
         TextRenderer.DrawText(graphics, snapshot.Name, _nameFont,
-            new Rectangle(Edge, y, Width - (Edge * 2) - 70, 20),
+            new Rectangle(contentX, card.Y + 12, contentWidth - 84, 20),
             textColor, TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
 
         var levelText = snapshot.Level is { } level ? $"{level}%" : "--";
         TextRenderer.DrawText(graphics, levelText, _levelFont,
-            new Rectangle(Width - Edge - 76, y - 6, 76, 30),
-            textColor, TextFormatFlags.Right | TextFormatFlags.NoPrefix);
+            new Rectangle(card.Right - 18 - 84, card.Y + 8, 84, 26),
+            snapshot.Level is null ? Theme.Muted : textColor,
+            TextFormatFlags.Right | TextFormatFlags.NoPrefix);
 
         var note = snapshot.State switch
         {
@@ -221,59 +262,57 @@ internal sealed class BatteryFlyout : Form
         if (note.Length > 0)
         {
             TextRenderer.DrawText(graphics, note, _noteFont,
-                new Point(Edge, y + 20), Color.FromArgb(148, 148, 148));
+                new Point(contentX, card.Y + 34), Theme.Muted);
         }
 
-        var bar = new Rectangle(Edge, y + 40, Width - (Edge * 2), 6);
-        using (var track = new SolidBrush(Color.FromArgb(58, 58, 62)))
-        using (var trackPath = Rounded(bar, 3))
+        // No level means no bar: an empty track next to "not connected" reads as noise.
+        if (snapshot.Level is not { } value || snapshot.State == BatteryState.Off)
         {
-            graphics.FillPath(track, trackPath);
+            return;
         }
 
-        if (snapshot.Level is { } value && snapshot.State != BatteryState.Off)
+        var bar = new Rectangle(contentX, card.Y + 50, contentWidth, 3);
+        using (var track = new SolidBrush(Theme.Border))
         {
-            var fill = new Rectangle(bar.X, bar.Y, Math.Max(4, bar.Width * value / 100), bar.Height);
-            using var brush = new SolidBrush(BarColor(snapshot));
-            using var fillPath = Rounded(fill, 3);
-            graphics.FillPath(brush, fillPath);
+            graphics.FillRectangle(track, bar);
         }
+
+        var filled = new Rectangle(bar.X, bar.Y, Math.Max(3, bar.Width * value / 100), bar.Height);
+        using var brush = new SolidBrush(BarColor(snapshot));
+        graphics.FillRectangle(brush, filled);
     }
 
     private void DrawFooter(Graphics graphics, int y)
     {
-        using (var separator = new Pen(Color.FromArgb(52, 52, 56)))
+        using (var separator = new Pen(Theme.Border))
         {
             graphics.DrawLine(separator, Edge, y, Width - Edge, y);
         }
 
-        _refreshBounds = new Rectangle(Edge - 6, y + 8, 70, 24);
-        _exitBounds = new Rectangle(Width - Edge - 48, y + 8, 54, 24);
+        _refreshBounds = new Rectangle(Edge - 6, y + 8, 62, 24);
+        _exitBounds = new Rectangle(Width - Edge - 34, y + 8, 40, 24);
 
-        TextRenderer.DrawText(graphics, "Refresh", _actionFont, _refreshBounds,
-            Color.FromArgb(122, 178, 255),
-            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        TextRenderer.DrawText(graphics, "refresh", _actionFont, _refreshBounds,
+            _hoverRefresh ? Theme.Accent : Theme.Muted,
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
 
-        TextRenderer.DrawText(graphics, "Exit", _actionFont, _exitBounds,
-            Color.FromArgb(158, 158, 158),
-            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        TextRenderer.DrawText(graphics, "exit", _actionFont, _exitBounds,
+            _hoverExit ? Theme.Text : Theme.Muted,
+            TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
     }
 
-    private static Color BarColor(DeviceSnapshot snapshot)
+    private static Color BarColor(DeviceSnapshot snapshot) => snapshot.State switch
     {
-        if (snapshot.State == BatteryState.Stale)
+        BatteryState.Stale => Theme.Muted,
+        BatteryState.Wired => Theme.Muted,
+        _ => snapshot.Level switch
         {
-            return Color.FromArgb(126, 126, 132);
-        }
-
-        return snapshot.Level switch
-        {
-            null => Color.FromArgb(126, 126, 132),
-            >= 50 => Color.FromArgb(0, 200, 83),
-            >= 20 => Color.FromArgb(255, 179, 0),
-            _ => Color.FromArgb(244, 67, 54),
-        };
-    }
+            null => Theme.Muted,
+            >= 50 => Theme.Green,
+            >= 20 => Theme.Accent,
+            _ => Theme.Red,
+        },
+    };
 
     private static string Age(DateTimeOffset? lastUpdated)
     {
@@ -286,19 +325,5 @@ internal sealed class BatteryFlyout : Form
         return age.TotalMinutes < 1
             ? $"{(int)age.TotalSeconds}s ago"
             : $"{(int)age.TotalMinutes}m ago";
-    }
-
-    private static GraphicsPath Rounded(Rectangle bounds, int radius)
-    {
-        var path = new GraphicsPath();
-        var diameter = radius * 2;
-
-        path.AddArc(bounds.X, bounds.Y, diameter, diameter, 180, 90);
-        path.AddArc(bounds.Right - diameter, bounds.Y, diameter, diameter, 270, 90);
-        path.AddArc(bounds.Right - diameter, bounds.Bottom - diameter, diameter, diameter, 0, 90);
-        path.AddArc(bounds.X, bounds.Bottom - diameter, diameter, diameter, 90, 90);
-        path.CloseFigure();
-
-        return path;
     }
 }
