@@ -76,9 +76,43 @@ of them rather than assuming.
 Sources: `openrazer/driver/razermouse_driver.c`, `razermouse_driver.h`,
 `razerchromacommon.c`, `razercommon.h`, `razercommon.c` at master.
 
-## Remaining unknown
+## Mouse HID channel (verified from code)
 
-Which HID top-level collection on PID `0x00DF` accepts the feature report, and whether
-Windows needs the report-ID byte prefixed (91-byte write, ID `0x00`) or a bare 90-byte write.
-That is a five-minute C# probe: enumerate `VID_1532&PID_00DF`, try each parent collection with
-a 90/91-byte feature write, and look for `status == 0x02` plus a plausible percentage.
+Implemented in `TrayCell.Core/Hid` and `TrayCell.Core/Devices/Razer`, exercised by
+`dotnet run --project src/TrayCell.Probe -- razer`. This replaces the "remaining unknown" above.
+
+- Only **one** collection on the dongle exposes feature reports:
+  `HID\VID_1532&PID_00DF&MI_00` (usage page `0x0001`, usage `0x0002`, the mouse), with
+  `FeatureReportByteLength = 91` — a report id byte plus the 90-byte Razer report.
+- Every other collection is input-only (`feat=0`), including the four vendor collections on
+  `MI_01` (`UP 0001 / U 0000`). They cannot carry a class `0x07` command.
+- Windows denies read/write access to that mouse collection (error 5). **Write-only**
+  (`GENERIC_WRITE`) does succeed, which is enough: `HidD_SetFeature` + `HidD_GetFeature` both work.
+- The report goes out as 91 bytes with report id `0x00` at index 0 and the Razer report at
+  index 1; the reply has the same shape, so parsing starts at index 1.
+- `HidP_GetCaps` returns `HIDP_STATUS_SUCCESS = 0x00110000`, **not** `0`. Testing against `0`
+  silently reports `feat=0` for every device on the system.
+- OpenRazer sleeps `RAZER_VIPER_MOUSE_RECEIVER_WAIT_US` (59900 us) between write and read;
+  `TryFeatureTransaction` takes an optional settle delay for this.
+
+Status: **working**. A live read returned
+
+```
+02 1F 00 00 00 02 07 80 00 39 00 00 ...
+```
+
+`status = 0x02` (success), `arguments[1] = 57` → **57%**, and the charging query returned
+`arguments[1] = 0` (not charging).
+
+Response codes seen in practice, all of which the poller must survive:
+
+| Status | Meaning | When |
+|---|---|---|
+| `0x02` | success | mouse awake; `arguments[1]` is the level |
+| `0x04` | command no response | **mouse asleep** — the normal case after a minute of idle. Not an error. |
+| `0x01` | command busy | previous request still in flight, or polled too quickly |
+| `0x02` with level `255` | success frame, unusable value | transient, while the mouse is waking; retry once |
+
+So a sleeping mouse is indistinguishable from an unreachable one at the protocol level, and a
+single 255 reading is normal. `RazerBatterySource` retries 4 times at 250 ms and rejects any
+level above 100, and `BatteryMonitor` shows the last good value as *stale* rather than wrong.

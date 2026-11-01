@@ -13,18 +13,50 @@ Research complete, implementation not started. Two documents:
 
 | Device | Feasible | Transport | State |
 |---|---|---|---|
-| 8BitDo Ultimate 2C | Yes, verified | BLE PnP device property (`{104EA319-...} 2`) | Read live from the shell: 100%, node `BTHLE\DEV_...` |
-| Razer Viper V3 Pro SE | Yes, verified IDs | Razer HID feature reports, class `0x07` | PID `0x00DF` (dongle) confirmed on machine; tx id `0x1f`, commands `0x07/0x80` + `0x07/0x84` confirmed in OpenRazer. Only the HID collection to open is unverified. |
+| 8BitDo Ultimate 2C | Yes, verified | BLE PnP device property (`{104EA319-...} 2`) | Read from code: 100%. Node `BTHLE\DEV_...`, matched by friendly name. |
+| Razer Viper V3 Pro SE | Yes, verified | Razer HID feature reports, class `0x07` | Read from code: 57% (level in `arguments[1]`). PID `0x00DF`, channel `MI_00`, 91-byte feature report. A sleeping mouse answers `0x04` and shows as stale. |
 
 ## Design in one paragraph
 
 One process, two independent pollers on a 30–60 s timer, and a per-device state model of `Level`, `Charging`, `LastUpdated`, `State = Ok | Stale | Off`. A number is never shown without its staleness marked, because both devices can silently stop reporting (mouse asleep, controller switched to the 2.4 GHz dongle). Tray UI is either two icons with the percentage drawn on them or one icon with a combined tooltip.
 
-Planned stack: C# / .NET on Windows — `NotifyIcon` for the tray, SetupAPI (`CM_Get_DevNode_PropertyW`) for the controller, HidSharp for the Razer feature reports. Rust is a viable alternative but was not chosen.
+Planned stack: C# / .NET 10 on Windows — `NotifyIcon` for the tray, cfgmgr32 (`CM_Get_DevNode_PropertyW`) for the controller, and raw `hid.dll` / `setupapi` feature reports for the Razer mouse. No NuGet packages.
+
+## Project layout
+
+```
+src/TrayCell.Core/     pollers, native interop, Ok/Stale/Off state model
+src/TrayCell.Probe/    console harness that exercises both devices independently
+src/TrayCell.App/      WinForms tray app (two icons, shared context menu)
+```
+
+## Building and running
+
+```powershell
+dotnet build TrayCell.slnx
+
+# both devices
+dotnet run --project src/TrayCell.Probe -- all
+
+# controller only (Bluetooth PnP property)
+dotnet run --project src/TrayCell.Probe -- controller
+
+# mouse only (enumerates Razer HID collections, tries the battery query on each)
+dotnet run --project src/TrayCell.Probe -- razer
+
+# watch the mouse for 30 s while you move it
+dotnet run --project src/TrayCell.Probe -- watch
+
+# single spaced read with every response argument printed
+dotnet run --project src/TrayCell.Probe -- battery
+
+# the tray app
+dotnet run --project src/TrayCell.App
+```
 
 ## Known open questions
 
-- Fork an existing Viper V3 Pro tray project for the mouse side, or write everything from scratch?
+- ~~Fork an existing Viper V3 Pro tray project, or write everything from scratch?~~ Answered: scratch, C#.
 - Two tray icons or one combined icon/tooltip?
 - Does the mouse also need to be monitored while charging over cable?
 - Which SE dongle is in use (HyperSpeed vs HyperPolling), and what are its real hardware IDs?
