@@ -12,19 +12,19 @@ namespace TrayCell.App;
 /// </summary>
 internal sealed class BatteryFlyout : Form
 {
-    private const int Edge = 16;
-    private const int RowHeight = 66;
-    private const int FooterHeight = 40;
-    private const int PanelWidth = 320;
-    private const int CardInset = 8;
+    private const int Edge = 12;
+    private const int RowHeight = 56;
+    private const int FooterHeight = 5;
+    private const int PanelWidth = 296;
+    private const int CardInset = 6;
 
     private readonly Action _refresh;
     private readonly Action _exit;
     private readonly Action<string?> _pin;
-    private readonly Font _nameFont = new("Segoe UI Semibold", 9.5f, FontStyle.Regular);
+    private readonly Font _nameFont = new("Segoe UI Semibold", 10f, FontStyle.Regular);
     private readonly Font _levelFont = new("Consolas", 14f, FontStyle.Bold);
-    private readonly Font _noteFont = new("Consolas", 9f, FontStyle.Regular);
-    private readonly Font _actionFont = new("Consolas", 9.5f, FontStyle.Regular);
+    private readonly Font _noteFont = new("Consolas", 8.5f, FontStyle.Regular);
+    private readonly Font _actionFont = new("Consolas", 9f, FontStyle.Regular);
 
     private readonly List<(Rectangle Bounds, string Device)> _rowBounds = [];
 
@@ -237,19 +237,20 @@ internal sealed class BatteryFlyout : Form
             graphics.FillRectangle(accent, card.X, card.Y, 2, card.Height);
         }
 
-        var contentX = card.X + 18;
-        var contentWidth = card.Width - 36;
+        var contentX = card.X + 14;
+        var contentWidth = card.Width - 28;
         var textColor = snapshot.State == BatteryState.Off ? Theme.Muted : Theme.Text;
 
         TextRenderer.DrawText(graphics, snapshot.Name, _nameFont,
-            new Rectangle(contentX, card.Y + 12, contentWidth - 84, 20),
-            textColor, TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            new Rectangle(contentX, card.Y + 8, contentWidth - 58, 20),
+            textColor,
+            TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
 
         var levelText = snapshot.Level is { } level ? $"{level}%" : "--";
         TextRenderer.DrawText(graphics, levelText, _levelFont,
-            new Rectangle(card.Right - 18 - 84, card.Y + 8, 84, 26),
+            new Rectangle(card.Right - 14 - 58, card.Y + 5, 58, 24),
             snapshot.Level is null ? Theme.Muted : textColor,
-            TextFormatFlags.Right | TextFormatFlags.NoPrefix);
+            TextFormatFlags.Right | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
 
         var note = snapshot.State switch
         {
@@ -262,7 +263,8 @@ internal sealed class BatteryFlyout : Form
         if (note.Length > 0)
         {
             TextRenderer.DrawText(graphics, note, _noteFont,
-                new Point(contentX, card.Y + 34), Theme.Muted);
+                new Point(contentX, card.Y + 27), Theme.Muted,
+                TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
         }
 
         // No level means no bar: an empty track next to "not connected" reads as noise.
@@ -271,7 +273,7 @@ internal sealed class BatteryFlyout : Form
             return;
         }
 
-        var bar = new Rectangle(contentX, card.Y + 50, contentWidth, 3);
+        var bar = new Rectangle(contentX, card.Y + 36, contentWidth, 3);
         using (var track = new SolidBrush(Theme.Border))
         {
             graphics.FillRectangle(track, bar);
@@ -284,21 +286,16 @@ internal sealed class BatteryFlyout : Form
 
     private void DrawFooter(Graphics graphics, int y)
     {
-        using (var separator = new Pen(Theme.Border))
-        {
-            graphics.DrawLine(separator, Edge, y, Width - Edge, y);
-        }
-
-        _refreshBounds = new Rectangle(Edge - 6, y + 8, 62, 24);
-        _exitBounds = new Rectangle(Width - Edge - 34, y + 8, 40, 24);
+        _refreshBounds = new Rectangle(Edge - 4, y - 11, 56, 12);
+        _exitBounds = new Rectangle(Width - Edge - 30, y - 11, 34, 12);
 
         TextRenderer.DrawText(graphics, "refresh", _actionFont, _refreshBounds,
             _hoverRefresh ? Theme.Accent : Theme.Muted,
-            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
 
         TextRenderer.DrawText(graphics, "exit", _actionFont, _exitBounds,
             _hoverExit ? Theme.Text : Theme.Muted,
-            TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            TextFormatFlags.Right | TextFormatFlags.Top | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
     }
 
     private static Color BarColor(DeviceSnapshot snapshot) => snapshot.State switch
