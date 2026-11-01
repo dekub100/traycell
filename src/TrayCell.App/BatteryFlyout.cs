@@ -214,6 +214,7 @@ internal sealed class BatteryFlyout : Form
         {
             BatteryState.Stale => $"stale, last seen {Age(snapshot.LastUpdated)}",
             BatteryState.Off => "not connected",
+            BatteryState.Wired => "connected over USB, no battery level",
             _ => snapshot.IsCharging == true ? "charging" : string.Empty,
         };
 

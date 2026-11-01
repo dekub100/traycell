@@ -39,6 +39,10 @@ try
         case "hid":
             DumpHid();
             break;
+        case "xinput":
+            Console.WriteLine("== XInput controllers ==");
+            DumpXInput();
+            break;
         case "all":
             ProbeController();
             Console.WriteLine();
@@ -62,7 +66,9 @@ static void PrintUsage()
     Console.WriteLine("""
         TrayCell probe
 
-          controller   Read the 8BitDo battery via the Windows Bluetooth device property
+          controller   Read the 8BitDo battery via the Windows Bluetooth device property,
+                       ignoring paired-but-offline nodes
+          xinput       List connected XInput controllers and their battery type/level
           razer        Enumerate Razer HID collections and try the battery query on each
                        (--all also tries PIDs other than the Viper V3 Pro / SE)
           hid          Dump every present HID collection with its usage page/usage
@@ -83,15 +89,43 @@ static void ProbeController()
     foreach (var device in devices)
     {
         var battery = device.BatteryLevel is { } level ? $"{level}%" : "no battery property";
-        Console.WriteLine($"  {device.FriendlyName ?? "(no name)"} | {battery} | {device.InstanceId}");
+        var status = device.DevNodeStatus is { } bits ? $"0x{bits:X8}" : "unknown";
+        var disconnected = device.DevNodeStatus is { } flags && (flags & 0x0200_0000) != 0;
+        var problem = device.ProblemCode is { } code ? code.ToString() : "none";
+        Console.WriteLine($"  {device.FriendlyName ?? "(no name)"} | {battery} | status={status}{(disconnected ? " (disconnected)" : string.Empty)} problem={problem}");
+        Console.WriteLine($"    {device.InstanceId}");
     }
+
+    Console.WriteLine();
+    Console.WriteLine("  -- XInput view (same physical controller over USB) --");
+    DumpXInput();
 
     var source = new ControllerBatterySource();
     var reading = source.Read();
     Console.WriteLine();
-    Console.WriteLine(reading.Success
-        ? $"  RESULT: {source.Name} = {reading.Level}%"
-        : $"  RESULT: unavailable - {reading.Detail}");
+    Console.WriteLine(reading switch
+    {
+        { Success: true } => $"  RESULT: {source.Name} = {reading.Level}%",
+        { Present: true } => $"  RESULT: {source.Name} connected, no percentage - {reading.Detail}",
+        _ => $"  RESULT: unavailable - {reading.Detail}",
+    });
+}
+
+static void DumpXInput()
+{
+    var controllers = XInputDevice.ReadBatteries();
+    if (controllers.Count == 0)
+    {
+        Console.WriteLine("  no XInput controller connected");
+        return;
+    }
+
+    foreach (var controller in controllers)
+    {
+        Console.WriteLine($"  slot {controller.Slot}: connected, battery " +
+                          $"type={XInputDevice.DescribeType(controller.Type)} " +
+                          $"level={XInputDevice.DescribeLevel(controller.Level)}");
+    }
 }
 
 static void ProbeRazer(bool includeAllPids, int settleMs)
@@ -128,7 +162,9 @@ static void ProbeRazer(bool includeAllPids, int settleMs)
             continue;
         }
 
-        if (!collection.TryFeatureTransaction(RazerReport.CreateBatteryLevelRequest(), out var raw, out var error))
+        if (!collection.TryFeatureTransaction(
+                RazerReport.CreateBatteryLevelRequest(), out var raw, out var error,
+                TimeSpan.FromMilliseconds(settleMs)))
         {
             Console.WriteLine($"             query failed: {error}");
             continue;
@@ -140,7 +176,9 @@ static void ProbeRazer(bool includeAllPids, int settleMs)
         for (var attempt = 0; attempt < 5 && RazerReport.TryParse(raw, out var probe) && !probe.IsSuccess; attempt++)
         {
             Thread.Sleep(200);
-            if (!collection.TryFeatureTransaction(RazerReport.CreateBatteryLevelRequest(), out raw, out error))
+            if (!collection.TryFeatureTransaction(
+                    RazerReport.CreateBatteryLevelRequest(), out raw, out error,
+                    TimeSpan.FromMilliseconds(settleMs)))
             {
                 Console.WriteLine($"             retry {attempt + 1} failed: {error}");
                 break;
@@ -173,7 +211,9 @@ static void ProbeRazer(bool includeAllPids, int settleMs)
         if (response.IsSuccess && response.Argument1 is >= 0 and <= 100)
         {
             answers++;
-            var charging = collection.TryFeatureTransaction(RazerReport.CreateChargingStatusRequest(), out var rawCharging, out _, TimeSpan.FromMilliseconds(settleMs))
+            var charging = collection.TryFeatureTransaction(
+                    RazerReport.CreateChargingStatusRequest(), out var rawCharging, out _,
+                    TimeSpan.FromMilliseconds(settleMs))
                 && RazerReport.TryParse(rawCharging, out var chargingResponse)
                 && chargingResponse.IsSuccess
                     ? $"charging={chargingResponse.Argument1}"

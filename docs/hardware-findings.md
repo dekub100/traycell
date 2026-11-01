@@ -116,3 +116,27 @@ Response codes seen in practice, all of which the poller must survive:
 So a sleeping mouse is indistinguishable from an unreachable one at the protocol level, and a
 single 255 reading is normal. `RazerBatterySource` retries 4 times at 250 ms and rejects any
 level above 100, and `BatteryMonitor` shows the last good value as *stale* rather than wrong.
+
+## Controller transport state
+
+Verified on the target machine with the controller plugged in by USB cable and charging.
+
+- The paired BLE node **stays present** after the controller leaves Bluetooth:
+  `BTHLE\DEV_REDACTED`, still carrying `DEVPKEY_Bluetooth_BatteryLevel = 100`.
+  That value is cached from the last Bluetooth session, not the current level.
+- The node is marked disconnected in `DEVPKEY_Device_DevNodeStatus`
+  (`{4340A6C5-93FA-4706-972C-7B648008A5A7}`, 2). Observed status `0x0380200A` contains
+  `DN_DEVICE_DISCONNECTED = 0x02000000`. Windows Settings agrees: "not connected".
+  `DEVPKEY_Device_ProblemCode` is `0`, so the problem code is not a usable signal.
+- Over USB the controller appears as `USB\VID_2DC8&PID_310A` with an
+  `XnaComposite` / "Xbox 360 Controller for Windows" child, i.e. XInput. A second,
+  differently-named node (keyboard/mouse collections on `MI_01`) is the same device.
+- XInput's own battery query returns `type = wired`, `level = full` — a placeholder.
+  **XInput exposes no percentage**, on USB or on the 2.4 GHz dongle.
+- Windows also exposes a stale `8BitDo Ultimate 2C Wireless` entry that looks "OK" to
+  `Get-PnpDevice`; only the devnode status bit reveals that it is offline.
+
+Rule used by `ControllerBatterySource`: read the BLE property only when
+`DN_DEVICE_DISCONNECTED` is clear; otherwise, if an XInput controller is live and an 8BitDo
+USB device is present, return a *connected* reading with no level (`BatteryState.Wired`);
+otherwise report unavailable.

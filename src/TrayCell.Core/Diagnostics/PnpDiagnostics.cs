@@ -5,7 +5,12 @@ namespace TrayCell.Diagnostics;
 /// <summary>Read-only views of the PnP device tree, used by the probe and for troubleshooting.</summary>
 public static class PnpDiagnostics
 {
-    public readonly record struct BleDevice(string InstanceId, string? FriendlyName, uint? BatteryLevel);
+    public readonly record struct BleDevice(
+        string InstanceId,
+        string? FriendlyName,
+        uint? BatteryLevel,
+        uint? DevNodeStatus,
+        uint? ProblemCode);
 
     /// <summary>Every present BLE device node with the battery property Windows exposes.</summary>
     public static IEnumerable<BleDevice> BluetoothDevices()
@@ -20,7 +25,9 @@ public static class PnpDiagnostics
             yield return new BleDevice(
                 instanceId,
                 CfgMgr32.TryReadString(deviceInstance, DevPropKeys.FriendlyName),
-                CfgMgr32.TryReadUInt32(deviceInstance, DevPropKeys.BluetoothBatteryLevel));
+                CfgMgr32.TryReadUInt32(deviceInstance, DevPropKeys.BluetoothBatteryLevel),
+                CfgMgr32.TryReadUInt32(deviceInstance, DevPropKeys.DevNodeStatus),
+                CfgMgr32.TryReadUInt32(deviceInstance, DevPropKeys.ProblemCode));
         }
     }
 }

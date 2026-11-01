@@ -83,6 +83,14 @@ internal static class BatteryIconRenderer
             graphics.DrawLine(slash, 4, 24, 22, 8);
         }
 
+        // Connected but unmetered (XInput): outline plus a dot, so it reads differently
+        // from "off" without inventing a fill level.
+        if (snapshot.State == BatteryState.Wired)
+        {
+            using var dot = new SolidBrush(Color.FromArgb(210, 210, 210));
+            graphics.FillEllipse(dot, 11, 14, 4, 4);
+        }
+
         if (snapshot.IsCharging == true)
         {
             using var bolt = new SolidBrush(Color.FromArgb(255, 255, 255));

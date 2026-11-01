@@ -18,6 +18,12 @@ internal static class DevPropKeys
 
     /// <summary>DEVPKEY_Bluetooth_BatteryLevel - the value Windows Settings shows.</summary>
     public static readonly DevPropKey BluetoothBatteryLevel = new(new Guid("104ea319-6ee2-4701-bd47-8ddbf425bbe5"), 2);
+
+    /// <summary>DEVPKEY_Device_DevNodeStatus - DEVICE_STATUS bitmask, not the same as "connected".</summary>
+    public static readonly DevPropKey DevNodeStatus = new(new Guid("4340a6c5-93fa-4706-972c-7b648008a5a7"), 2);
+
+    /// <summary>DEVPKEY_Device_ProblemCode - CM_PROB_* when the node has a problem.</summary>
+    public static readonly DevPropKey ProblemCode = new(new Guid("4340a6c5-93fa-4706-972c-7b648008a5a7"), 3);
 }
 
 /// <summary>Minimal cfgmgr32 interop: device enumeration and property reads.</summary>

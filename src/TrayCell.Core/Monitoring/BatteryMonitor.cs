@@ -12,6 +12,12 @@ public enum BatteryState
 
     /// <summary>No usable value at all (device off, unplugged, or never seen).</summary>
     Off,
+
+    /// <summary>
+    /// Connected, but the transport exposes no percentage (XInput over USB or the
+    /// 2.4 GHz dongle reports only "wired / full").
+    /// </summary>
+    Wired,
 }
 
 public sealed record DeviceSnapshot(
@@ -27,6 +33,7 @@ public sealed record DeviceSnapshot(
         BatteryState.Ok when IsCharging == true => $"{Name}: {Level}% (charging)",
         BatteryState.Ok => $"{Name}: {Level}%",
         BatteryState.Stale => $"{Name}: {Level}% (stale, {Age()})",
+        BatteryState.Wired => $"{Name}: connected, no battery level",
         _ => $"{Name}: unavailable",
     };
 
@@ -82,6 +89,13 @@ public sealed class BatteryMonitor
                 _lastValue[source.Name] = (level, reading.IsCharging);
                 _lastSuccess[source.Name] = reading.ObservedAt;
                 snapshots.Add(new DeviceSnapshot(source.Name, level, reading.IsCharging, BatteryState.Ok, reading.ObservedAt, reading.Detail));
+                continue;
+            }
+
+            // Connected but unmetered: report that instead of a stale number or "off".
+            if (reading is { Present: true, Level: null })
+            {
+                snapshots.Add(new DeviceSnapshot(source.Name, null, null, BatteryState.Wired, reading.ObservedAt, reading.Detail));
                 continue;
             }
 

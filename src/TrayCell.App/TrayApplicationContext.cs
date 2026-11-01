@@ -198,7 +198,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
             .Select(snapshot =>
             {
                 var label = ShortLabel(snapshot.Name);
-                var level = snapshot.Level is { } value ? $"{value}%" : "unavailable";
+                var level = snapshot.Level is { } value ? $"{value}%"
+                    : snapshot.State == BatteryState.Wired ? "USB"
+                    : "unavailable";
                 var stale = snapshot.State == BatteryState.Stale ? " (stale)" : string.Empty;
                 var charging = snapshot.IsCharging == true && snapshot.State == BatteryState.Ok ? " charging" : string.Empty;
                 var pinned = string.Equals(snapshot.Name, pinnedDevice, StringComparison.OrdinalIgnoreCase) ? " [pinned]" : string.Empty;
