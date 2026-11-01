@@ -9,6 +9,8 @@ TrayCell is a small native C# app that reads the battery level of a **Razer Vipe
 and an **8BitDo Ultimate 2C** and shows it in a single tray icon. No Razer Synapse, no 8BitDo
 software, no background services, no telemetry.
 
+![TrayCell flyout showing the mouse at 52% and the controller not connected](docs/traycell-preview.png)
+
 ## 🤖 AI-Generated
 
 This project was written entirely by AI ([OpenCode](https://github.com/anomalyco/opencode)
