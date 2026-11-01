@@ -66,7 +66,7 @@ of them rather than assuming.
 | 88 | `crc` | XOR of bytes 2..87 |
 | 89 | `reserved` | `0x00` |
 
-- **Battery level**: class `0x07`, id `0x80`, `data_size 0x02` → level in `arguments[1]` (0–100).
+- **Battery level**: class `0x07`, id `0x80`, `data_size 0x02` → level in `arguments[1]`, **0–255**. Scale to a percentage with `raw * 100 / 255` (OpenRazer does the same in `mamba.py` and `get_battery.py`).
 - **Charging status**: class `0x07`, id `0x84`, `data_size 0x02` → `arguments[1]` = `0`/`1`.
 - **CRC**: `crc = bytes[2] ^ bytes[3] ^ ... ^ bytes[87]`, stored at index 88.
 - **Response check**: `status == 0x02` means success (`0x03` failure, `0x04` timeout/no response).
@@ -101,8 +101,8 @@ Status: **working**. A live read returned
 02 1F 00 00 00 02 07 80 00 39 00 00 ...
 ```
 
-`status = 0x02` (success), `arguments[1] = 57` → **57%**, and the charging query returned
-`arguments[1] = 0` (not charging).
+`status = 0x02` (success), `arguments[1] = 57` → **22%** after scaling, and the charging query
+returned `arguments[1] = 0` (not charging).
 
 Response codes seen in practice, all of which the poller must survive:
 
@@ -111,11 +111,12 @@ Response codes seen in practice, all of which the poller must survive:
 | `0x02` | success | mouse awake; `arguments[1]` is the level |
 | `0x04` | command no response | **mouse asleep** — the normal case after a minute of idle. Not an error. |
 | `0x01` | command busy | previous request still in flight, or polled too quickly |
-| `0x02` with level `255` | success frame, unusable value | transient, while the mouse is waking; retry once |
+| `0x02` with level `255` | success frame, ambiguous | `255` is both the valid full-charge value and the garbage frame seen while waking; confirm with a second read |
 
 So a sleeping mouse is indistinguishable from an unreachable one at the protocol level, and a
-single 255 reading is normal. `RazerBatterySource` retries 4 times at 250 ms and rejects any
-level above 100, and `BatteryMonitor` shows the last good value as *stale* rather than wrong.
+single 255 reading is ambiguous. `RazerBatterySource` retries 4 times at 250 ms, confirms a 255
+with a second read, and scales the raw byte to 0–100. `BatteryMonitor` shows the last good value
+as *stale* rather than wrong.
 
 ## Controller transport state
 

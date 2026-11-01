@@ -120,11 +120,29 @@ public sealed class RazerBatterySource : IBatterySource, IDisposable
             return BatteryReading.Unavailable(response.Describe());
         }
 
-        var level = response.Argument1;
-        if (level is < 0 or > 100)
+        var rawLevel = response.Argument1;
+
+        // 255 is both a valid full-charge value and the garbage frame seen while the
+        // mouse wakes, so confirm it with a second read before trusting it.
+        if (rawLevel == 255)
         {
-            return BatteryReading.Unavailable($"implausible level {level} in {response.Describe()}");
+            Thread.Sleep(100);
+            if (collection.TryFeatureTransaction(
+                    RazerReport.CreateBatteryLevelRequest(), out var confirmRaw, out _, SettleDelay)
+                && RazerReport.TryParse(confirmRaw, out var confirmed)
+                && confirmed.IsSuccess)
+            {
+                rawLevel = confirmed.Argument1;
+            }
         }
+
+        if (rawLevel is < 0 or > 255)
+        {
+            return BatteryReading.Unavailable($"implausible level {rawLevel} in {response.Describe()}");
+        }
+
+        // The device reports 0-255; OpenRazer scales it the same way (mamba.py, get_battery.py).
+        var level = (int)Math.Round(rawLevel * 100.0 / 255.0);
 
         bool? charging = null;
         if (collection.TryFeatureTransaction(
@@ -135,7 +153,7 @@ public sealed class RazerBatterySource : IBatterySource, IDisposable
             charging = chargingResponse.Argument1 != 0;
         }
 
-        return BatteryReading.Ok(level, charging, $"usage {collection.UsagePage:X4}/{collection.Usage:X4}");
+        return BatteryReading.Ok(level, charging, $"usage {collection.UsagePage:X4}/{collection.Usage:X4}, raw {rawLevel}");
     }
 
     private void DisposeActive()

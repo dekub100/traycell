@@ -229,9 +229,10 @@ static void ProbeRazer(bool includeAllPids, int settleMs)
 
         Console.WriteLine($"             {response.Describe()}");
 
-        if (response.IsSuccess && response.Argument1 is >= 0 and <= 100)
+        if (response.IsSuccess)
         {
             answers++;
+            var scaled = (int)Math.Round(response.Argument1 * 100.0 / 255.0);
             var charging = collection.TryFeatureTransaction(
                     RazerReport.CreateChargingStatusRequest(), out var rawCharging, out _,
                     TimeSpan.FromMilliseconds(settleMs))
@@ -240,7 +241,7 @@ static void ProbeRazer(bool includeAllPids, int settleMs)
                     ? $"charging={chargingResponse.Argument1}"
                     : "charging=unknown";
 
-            Console.WriteLine($"             MATCH: level={response.Argument1}% {charging}");
+            Console.WriteLine($"             MATCH: level={scaled}% (raw {response.Argument1}) {charging}");
         }
     }
 
