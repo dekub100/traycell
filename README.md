@@ -6,12 +6,15 @@ The goal is a glanceable, always-on percentage per device, with no Razer Synapse
 
 ## Status
 
-Research / feasibility. Nothing is implemented yet. The findings, test results and open questions live in [`battery-tray-handoff.md`](battery-tray-handoff.md) — read that first; it separates what was actually tested on the target machine from what was only found online.
+Research complete, implementation not started. Two documents:
+
+- [`battery-tray-handoff.md`](battery-tray-handoff.md) — the original research, including dead ends and reasoning.
+- [`docs/hardware-findings.md`](docs/hardware-findings.md) — what has since been **verified on the target machine**: exact device IDs, protocol bytes, CRC rule.
 
 | Device | Feasible | Transport | State |
 |---|---|---|---|
-| 8BitDo Ultimate 2C | Yes | BLE PnP device property (`{104EA319-...} 2`) | Value confirmed live in Device Manager (48% → 46%) |
-| Razer Viper V3 Pro SE | Probably | Razer HID feature reports (OpenRazer class `0x07`) | SE PIDs / transaction ID / command bytes unknown |
+| 8BitDo Ultimate 2C | Yes, verified | BLE PnP device property (`{104EA319-...} 2`) | Read live from the shell: 100%, node `BTHLE\DEV_...` |
+| Razer Viper V3 Pro SE | Yes, verified IDs | Razer HID feature reports, class `0x07` | PID `0x00DF` (dongle) confirmed on machine; tx id `0x1f`, commands `0x07/0x80` + `0x07/0x84` confirmed in OpenRazer. Only the HID collection to open is unverified. |
 
 ## Design in one paragraph
 
