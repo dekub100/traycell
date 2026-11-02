@@ -5,7 +5,14 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <InvariantGlobalization>true</InvariantGlobalization>
+    <!--
+      Must stay false: WinForms builds InputLanguageChangedEventArgs from the LCID of the
+      active keyboard layout (Control.WmInputLangChange -> InputLanguage.LanguageTag ->
+      CultureInfo.GetCultureInfo). In globalization-invariant mode that call throws for any
+      real culture (e.g. 0x0415 Polish) and surfaces as a ThreadException crash dialog when
+      the user switches input language. Windows 10 1903+ ships icu.dll, so no extra files.
+    -->
+    <InvariantGlobalization>false</InvariantGlobalization>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 
