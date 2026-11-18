@@ -3,6 +3,8 @@
 [![CI](https://github.com/dekub100/traycell/actions/workflows/ci.yml/badge.svg)](https://github.com/dekub100/traycell/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+## found something better so go ahead and use it if you want something to display your battery levels [Wireless-Device-Battery-Monitor](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor))
+
 Battery levels for your wireless peripherals, in the Windows tray.
 
 TrayCell is a small native C# app that reads the battery level of a **Razer Viper V3 Pro SE**
